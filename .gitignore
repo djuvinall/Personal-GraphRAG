@@ -1,0 +1,15 @@
+# Derived / regenerable — the journal is the source of truth, the graph is an index.
+graph/
+graph_enrich/
+__pycache__/
+*.pyc
+
+# Local env
+venv/
+.venv/
+.env
+
+# Your actual memory data is private. The JOURNAL is the source of truth — DECIDE
+# consciously whether to track it. By default it's ignored (private by default).
+# To version your memory (recommended once it matters), delete the next line.
+data/

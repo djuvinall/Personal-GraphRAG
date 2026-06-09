@@ -1,0 +1,16 @@
+# Personal GraphRAG — Python dependencies
+# Ollama is an external service (not a pip package). Install it separately and pull:
+#   https://ollama.com  ->  ollama pull nomic-embed-text   (embeddings, required for the
+#                                                            quality backend)
+#                          ollama pull qwen2.5:3b          (optional local generation)
+#
+# Note: with PMEM_EMBED_BACKEND=hash the system runs with NO Ollama at all
+# (zero-dependency fallback embedder) — handy for trying it out or for tests.
+
+lightrag-hku>=1.0.0      # hybrid vector + graph retrieval (custom_kg write path)
+fastmcp>=2.0.0           # MCP server exposing memory tools to Claude.ai
+aiohttp>=3.9.0           # async HTTP to Ollama
+numpy>=1.26.0            # embedding arrays + the hash fallback embedder
+
+# No DuckDB / instructor here (unlike Kosh): the source of truth is an append-only
+# JSONL journal, not a staging database — simpler and git-friendly for personal use.
