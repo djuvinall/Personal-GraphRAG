@@ -13,4 +13,4 @@ venv/
 # consciously whether to track it. By default it's ignored (private by default).
 # To version your memory (recommended once it matters), delete the next line.
 data/
-.obsidian/workspace.json
+.obsidian\workspace.json
