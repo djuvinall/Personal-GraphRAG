@@ -85,7 +85,8 @@ async def main():
     # journal still holds Obsidian's add + its forget tombstone -> replay drops it
     check("rebuilt graph excludes forgotten Obsidian",
           all(n["entity"] != "Obsidian" for n in st2["most_connected"]))
-    check("journal is the source of truth", journal.stats()["total_records"] >= 4)
+    # three writes happened: the structured remember, the link, and the forget.
+    check("journal is the source of truth", journal.stats()["total_records"] >= 3)
 
     print("=" * 60)
     print("INTEGRATION TEST PASSED")

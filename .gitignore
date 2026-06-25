@@ -13,4 +13,6 @@ venv/
 # consciously whether to track it. By default it's ignored (private by default).
 # To version your memory (recommended once it matters), delete the next line.
 data/
-.obsidian\workspace.json
+
+# Obsidian vault config / editor state — local, not part of the project.
+.obsidian/

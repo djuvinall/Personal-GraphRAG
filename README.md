@@ -140,3 +140,9 @@ nodes on the seed graph). The optional `recall`/`extract_local` paths need a
 running Ollama and mirror the proven Kosh call patterns.
 
 See [`CLAUDE.md`](CLAUDE.md) for the working guide and gotchas.
+
+## License
+
+Apache License 2.0 — see [`LICENSE`](LICENSE). Built on
+[LightRAG](https://github.com/HKUDS/LightRAG) and adapted from a private MSP
+GraphRAG proof of concept.

@@ -16,6 +16,7 @@ Run:  python mcp_server.py   (Streamable HTTP on 0.0.0.0:8000, path "/").
 Expose via ngrok and add the bare HTTPS URL as a Claude.ai connector (OAuth blank).
 """
 import json
+import os
 import sys
 
 from fastmcp import FastMCP
@@ -138,4 +139,5 @@ async def recall(query: str, mode: str = "hybrid") -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="http", host="0.0.0.0", port=8155, path="/")
+    port = int(os.environ.get("PMEM_PORT", "8000"))
+    mcp.run(transport="http", host="0.0.0.0", port=port, path="/")
