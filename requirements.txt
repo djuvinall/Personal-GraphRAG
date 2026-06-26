@@ -14,3 +14,9 @@ numpy>=1.26.0            # embedding arrays + the hash fallback embedder
 
 # No DuckDB / instructor here (unlike the MSP PoC): the source of truth is an append-only
 # JSONL journal, not a staging database — simpler and git-friendly for personal use.
+
+# Dashboard (dashboard.py) — web UI on port 5000
+fastapi>=0.110.0          # web framework (also pulled in by fastmcp, listed explicitly)
+uvicorn>=0.29.0           # ASGI server for dashboard.py
+python-multipart>=0.0.9   # form parsing (login form POST)
+itsdangerous>=2.1.0       # session cookie signing (starlette SessionMiddleware)

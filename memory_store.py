@@ -218,6 +218,11 @@ def replay(records: list[dict]) -> tuple[dict, list[dict]]:
             ents.pop(name, None)
             for key in [k for k in rels if name in (k[0], k[1])]:
                 rels.pop(key, None)
+        elif op == "forget_relationship":
+            key = ((r.get("source") or "").lower(),
+                   (r.get("target") or "").lower(),
+                   r.get("relation") or "")
+            rels.pop(key, None)
         elif op in ("remember", "link"):
             for e in r.get("entities", []):
                 if e.get("name"):

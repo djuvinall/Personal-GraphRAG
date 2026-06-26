@@ -1,0 +1,1299 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Personal GraphRAG</title>
+
+  <!-- Bootstrap 5 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css">
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+  <!-- Tabulator (Bootstrap 5 theme) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabulator/6.2.0/css/tabulator_bootstrap5.min.css">
+
+  <style>
+    :root {
+      --bg-app:    #0d1117;
+      --bg-panel:  #161b22;
+      --bg-hover:  #1c2128;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --text-muted:#8b949e;
+      --accent:    #388bfd;
+      --green:     #238636;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; background: var(--bg-app); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+
+    /* ── Layout ─────────────────────────────────────────── */
+    #app { display: flex; flex-direction: column; height: 100vh; }
+    #navbar { flex-shrink: 0; background: var(--bg-panel); border-bottom: 1px solid var(--border); padding: .6rem 1rem; display: flex; align-items: center; gap: .75rem; }
+    #navbar .brand { font-weight: 700; font-size: 1.05rem; }
+    #navbar .spacer { flex: 1; }
+    #body   { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── Sidebar ────────────────────────────────────────── */
+    #sidebar { width: 180px; flex-shrink: 0; background: var(--bg-panel); border-right: 1px solid var(--border); padding: .75rem .5rem; display: flex; flex-direction: column; gap: .25rem; }
+    .nav-btn { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border-radius: 6px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; width: 100%; text-align: left; font-size: .9rem; transition: background .15s, color .15s; }
+    .nav-btn:hover  { background: var(--bg-hover); color: var(--text); }
+    .nav-btn.active { background: #1f4a8a; color: var(--text); }
+
+    /* ── Main content ───────────────────────────────────── */
+    #main { flex: 1; display: flex; overflow: hidden; position: relative; }
+    .tab-pane { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+    .tab-pane.active { display: flex; }
+
+    /* ── Toolbar ────────────────────────────────────────── */
+    .toolbar { background: var(--bg-panel); border-bottom: 1px solid var(--border); padding: .5rem .75rem; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; flex-shrink: 0; }
+    .toolbar .sep { width: 1px; height: 22px; background: var(--border); margin: 0 .25rem; }
+
+    /* ── Graph ──────────────────────────────────────────── */
+    #cy-wrap { flex: 1; position: relative; overflow: hidden; background: var(--bg-app); }
+    #cy      { width: 100%; height: 100%; }
+    #legend  { position: absolute; bottom: 10px; left: 10px; background: rgba(22,27,34,.9); border: 1px solid var(--border); border-radius: 8px; padding: .5rem .75rem; font-size: .75rem; max-width: 200px; backdrop-filter: blur(4px); }
+    #legend .l-title { font-weight: 600; margin-bottom: .35rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; font-size: .68rem; }
+    .l-row { display: flex; align-items: center; gap: .45rem; margin-bottom: .2rem; }
+    .l-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    #ego-hint { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(56,139,253,.15); border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; padding: .3rem .75rem; font-size: .8rem; display: none; }
+    #filter-bar { background: var(--bg-panel); border-bottom: 1px solid var(--border); padding: .4rem .75rem; display: none; gap: .5rem; flex-wrap: wrap; align-items: center; flex-shrink: 0; }
+    #filter-bar.visible { display: flex; }
+
+    /* ── Detail panel ───────────────────────────────────── */
+    #detail { width: 300px; flex-shrink: 0; background: var(--bg-panel); border-left: 1px solid var(--border); display: none; flex-direction: column; overflow: hidden; }
+    #detail.open { display: flex; }
+    #detail-header { padding: .75rem 1rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    #detail-header h6 { margin: 0; font-weight: 700; font-size: .95rem; word-break: break-word; }
+    #detail-body { flex: 1; overflow-y: auto; padding: .75rem 1rem; }
+    .d-field { margin-bottom: .85rem; }
+    .d-label { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-bottom: .2rem; }
+    .d-value { font-size: .875rem; padding: .35rem .5rem; border-radius: 5px; cursor: pointer; min-height: 32px; word-break: break-word; border: 1px solid transparent; transition: border-color .15s, background .15s; }
+    .d-value:hover { border-color: var(--border); background: var(--bg-hover); }
+    .d-value.editing { border-color: var(--accent); background: var(--bg-app); cursor: text; }
+    .d-input { width: 100%; background: var(--bg-app); border: 1px solid var(--accent); color: var(--text); border-radius: 5px; padding: .3rem .5rem; font-size: .875rem; outline: none; }
+    .d-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(56,139,253,.15); }
+    select.d-input { cursor: pointer; }
+    textarea.d-input { resize: vertical; min-height: 80px; }
+    #detail-footer { padding: .75rem 1rem; border-top: 1px solid var(--border); display: flex; gap: .5rem; flex-shrink: 0; }
+    #detail-rels { margin-top: .5rem; }
+    .rel-item { font-size: .8rem; padding: .25rem .5rem; border-radius: 5px; background: var(--bg-hover); margin-bottom: .3rem; cursor: pointer; }
+    .rel-item:hover { background: #1f4a8a; }
+    .rel-tag  { display: inline-block; font-size: .7rem; padding: .1rem .4rem; border-radius: 4px; background: #1f4a8a; color: var(--accent); margin-right: .3rem; }
+
+    /* ── Tables ─────────────────────────────────────────── */
+    #pane-entities, #pane-rels { flex-direction: column; }
+    .table-toolbar { background: var(--bg-panel); border-bottom: 1px solid var(--border); padding: .5rem .75rem; display: flex; align-items: center; gap: .5rem; flex-shrink: 0; }
+    .table-wrap { flex: 1; overflow: hidden; }
+    .tabulator { background: var(--bg-app) !important; border: none !important; color: var(--text) !important; }
+    .tabulator .tabulator-header { background: var(--bg-panel) !important; border-bottom: 1px solid var(--border) !important; }
+    .tabulator .tabulator-header .tabulator-col { background: var(--bg-panel) !important; border-right: 1px solid var(--border) !important; color: var(--text-muted) !important; }
+    .tabulator-row { background: var(--bg-app) !important; border-bottom: 1px solid var(--border) !important; color: var(--text) !important; }
+    .tabulator-row:hover, .tabulator-row.tabulator-row-even:hover { background: var(--bg-hover) !important; }
+    .tabulator-row.tabulator-row-even { background: #0d1117 !important; }
+    .tabulator-row.tabulator-selected { background: #1f4a8a !important; }
+    .tabulator-cell { border-right: 1px solid var(--border) !important; }
+    .tabulator-edit-select, .tabulator-edit-input { background: var(--bg-app) !important; color: var(--text) !important; border: 1px solid var(--accent) !important; border-radius: 4px; }
+
+    /* ── Search ─────────────────────────────────────────── */
+    #pane-search { padding: 1.25rem; overflow-y: auto; gap: 1rem; }
+    .search-result { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; padding: .75rem 1rem; cursor: pointer; transition: border-color .15s; }
+    .search-result:hover { border-color: var(--accent); }
+    .search-score { font-size: .75rem; color: var(--text-muted); float: right; }
+    .search-name { font-weight: 600; margin-bottom: .2rem; }
+    .search-text { font-size: .8rem; color: var(--text-muted); }
+    .tag-badge { display: inline-block; font-size: .7rem; padding: .1rem .45rem; border-radius: 999px; background: #1f4a8a; color: var(--accent); margin: .1rem .1rem 0 0; }
+
+    /* ── Toast ──────────────────────────────────────────── */
+    #toast-wrap { position: fixed; bottom: 1.25rem; right: 1.25rem; z-index: 9999; display: flex; flex-direction: column; gap: .5rem; pointer-events: none; }
+    .g-toast { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; padding: .6rem 1rem; font-size: .85rem; opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .2s; pointer-events: none; max-width: 320px; }
+    .g-toast.show { opacity: 1; transform: none; }
+    .g-toast.ok   { border-left: 3px solid #2ea043; }
+    .g-toast.err  { border-left: 3px solid #f85149; }
+
+    /* ── Misc ───────────────────────────────────────────── */
+    .btn-xs { padding: .2rem .55rem; font-size: .78rem; }
+    .ws-dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; display: inline-block; box-shadow: 0 0 0 2px rgba(63,185,80,.25); }
+    .ws-dot.off { background: #f85149; box-shadow: 0 0 0 2px rgba(248,81,73,.25); }
+    #quick-search { max-width: 220px; }
+    .badge-count { font-size: .7rem; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Navbar ───────────────────────────────────────── -->
+  <nav id="navbar">
+    <span class="brand">🧠 Personal GraphRAG</span>
+    <span id="ws-status" class="ws-dot off" title="WebSocket disconnected"></span>
+    <div class="spacer"></div>
+    <span id="stat-nodes" class="badge bg-secondary badge-count me-1">0 nodes</span>
+    <span id="stat-edges" class="badge bg-secondary badge-count me-2">0 edges</span>
+    <input id="quick-search" type="text" class="form-control form-control-sm"
+           placeholder="Quick filter…" oninput="quickFilter(this.value)">
+    <form action="/logout" method="post" class="mb-0">
+      <button class="btn btn-outline-secondary btn-xs">
+        <i class="bi bi-box-arrow-right"></i> Sign out
+      </button>
+    </form>
+  </nav>
+
+  <!-- ── Body ─────────────────────────────────────────── -->
+  <div id="body">
+
+    <!-- Sidebar -->
+    <nav id="sidebar">
+      <button class="nav-btn active" onclick="switchTab('graph')" id="btn-graph">
+        <i class="bi bi-diagram-3"></i> Graph
+      </button>
+      <button class="nav-btn" onclick="switchTab('entities')" id="btn-entities">
+        <i class="bi bi-node-plus"></i> Entities
+        <span id="ent-count" class="ms-auto badge bg-secondary badge-count"></span>
+      </button>
+      <button class="nav-btn" onclick="switchTab('rels')" id="btn-rels">
+        <i class="bi bi-arrow-left-right"></i> Rels
+        <span id="rel-count" class="ms-auto badge bg-secondary badge-count"></span>
+      </button>
+      <button class="nav-btn" onclick="switchTab('search')" id="btn-search">
+        <i class="bi bi-search"></i> Search
+      </button>
+      <div style="flex:1"></div>
+      <button class="nav-btn" onclick="showAddEntityModal()">
+        <i class="bi bi-plus-circle"></i> Add entity
+      </button>
+      <button class="nav-btn" onclick="showAddRelModal()">
+        <i class="bi bi-share"></i> Add rel
+      </button>
+    </nav>
+
+    <!-- Main -->
+    <div id="main">
+
+      <!-- Graph pane -->
+      <div class="tab-pane active" id="pane-graph">
+        <!-- Toolbar -->
+        <div class="toolbar">
+          <span class="text-muted" style="font-size:.8rem">View:</span>
+          <div class="btn-group btn-group-sm" role="group">
+            <button class="btn btn-outline-secondary active" id="vm-full"    onclick="setViewMode('full')">Full</button>
+            <button class="btn btn-outline-secondary"        id="vm-ego"     onclick="setViewMode('ego')">Ego</button>
+            <button class="btn btn-outline-secondary"        id="vm-filtered" onclick="setViewMode('filtered')">Filtered</button>
+          </div>
+          <div class="sep"></div>
+          <span class="text-muted" style="font-size:.8rem">Color:</span>
+          <div class="btn-group btn-group-sm" role="group">
+            <button class="btn btn-outline-secondary active" id="cm-type" onclick="setColorMode('type')">Type</button>
+            <button class="btn btn-outline-secondary"        id="cm-cat"  onclick="setColorMode('category')">Category</button>
+          </div>
+          <div class="sep"></div>
+          <div class="form-check form-check-inline mb-0" style="font-size:.82rem">
+            <input class="form-check-input" type="checkbox" id="edge-labels-chk" checked
+                   onchange="toggleEdgeLabels(this.checked)">
+            <label class="form-check-label" for="edge-labels-chk">Edge labels</label>
+          </div>
+          <div class="sep"></div>
+          <button class="btn btn-outline-secondary btn-sm" onclick="relayout()" title="Re-layout graph">
+            <i class="bi bi-arrow-repeat"></i>
+          </button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="fitGraph()" title="Fit to window">
+            <i class="bi bi-fullscreen"></i>
+          </button>
+        </div>
+
+        <!-- Filter bar (visible in 'filtered' mode) -->
+        <div id="filter-bar">
+          <span class="text-muted" style="font-size:.8rem">Filter:</span>
+          <select id="f-type" class="form-select form-select-sm" style="width:130px" onchange="applyGraphFilter()">
+            <option value="">Any type</option>
+          </select>
+          <select id="f-cat" class="form-select form-select-sm" style="width:130px" onchange="applyGraphFilter()">
+            <option value="">Any category</option>
+          </select>
+          <input id="f-tag" type="text" class="form-control form-control-sm" style="width:130px"
+                 placeholder="Tag…" oninput="applyGraphFilter()">
+        </div>
+
+        <!-- Cytoscape canvas -->
+        <div id="cy-wrap">
+          <div id="cy"></div>
+          <div id="ego-hint">Click a node to set ego center</div>
+          <div id="legend"></div>
+        </div>
+      </div>
+
+      <!-- Entities pane -->
+      <div class="tab-pane" id="pane-entities">
+        <div class="table-toolbar">
+          <button class="btn btn-outline-danger btn-sm" id="bulk-del-ent" onclick="bulkDeleteEntities()" style="display:none">
+            <i class="bi bi-trash"></i> Delete selected
+          </button>
+          <div class="spacer"></div>
+          <button class="btn btn-outline-secondary btn-sm" onclick="loadAll()">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+          </button>
+        </div>
+        <div class="table-wrap">
+          <div id="ent-table"></div>
+        </div>
+      </div>
+
+      <!-- Relationships pane -->
+      <div class="tab-pane" id="pane-rels">
+        <div class="table-toolbar">
+          <button class="btn btn-outline-danger btn-sm" id="bulk-del-rel" onclick="bulkDeleteRels()" style="display:none">
+            <i class="bi bi-trash"></i> Delete selected
+          </button>
+          <div class="spacer"></div>
+          <button class="btn btn-outline-secondary btn-sm" onclick="loadAll()">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+          </button>
+        </div>
+        <div class="table-wrap">
+          <div id="rel-table"></div>
+        </div>
+      </div>
+
+      <!-- Search pane -->
+      <div class="tab-pane" id="pane-search">
+        <div style="max-width:640px">
+          <h6 class="fw-bold mb-3">Semantic Search</h6>
+          <div class="input-group mb-3">
+            <input id="sem-input" type="text" class="form-control" placeholder="Search your memory…"
+                   onkeydown="if(event.key==='Enter')runSearch()">
+            <button class="btn btn-primary" onclick="runSearch()">
+              <i class="bi bi-search"></i> Search
+            </button>
+          </div>
+          <div id="search-results"></div>
+        </div>
+      </div>
+
+      <!-- Detail panel -->
+      <div id="detail">
+        <div id="detail-header">
+          <h6 id="detail-name">Entity</h6>
+          <button class="btn btn-sm btn-outline-secondary" onclick="closeDetail()">
+            <i class="bi bi-x"></i>
+          </button>
+        </div>
+        <div id="detail-body">
+          <div class="d-field">
+            <div class="d-label">Type</div>
+            <div class="d-value" id="dv-type" onclick="startEdit('type')"></div>
+          </div>
+          <div class="d-field">
+            <div class="d-label">Category</div>
+            <div class="d-value" id="dv-category" onclick="startEdit('category')"></div>
+          </div>
+          <div class="d-field">
+            <div class="d-label">Tags</div>
+            <div class="d-value" id="dv-tags" onclick="startEdit('tags')" style="font-size:.8rem"></div>
+          </div>
+          <div class="d-field">
+            <div class="d-label">Description</div>
+            <div class="d-value" id="dv-description" onclick="startEdit('description')" style="white-space:pre-wrap"></div>
+          </div>
+          <div id="detail-rels">
+            <div class="d-label mb-2">Relationships</div>
+            <div id="detail-rels-list"></div>
+          </div>
+        </div>
+        <div id="detail-footer">
+          <button class="btn btn-success btn-sm flex-fill" onclick="saveDetail()">
+            <i class="bi bi-check2"></i> Save
+          </button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="cancelDetail()">
+            Cancel
+          </button>
+          <button class="btn btn-outline-danger btn-sm" onclick="deleteDetailNode()">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      </div>
+    </div><!-- /main -->
+  </div><!-- /body -->
+</div><!-- /app -->
+
+<!-- ── Toast container ──────────────────────────── -->
+<div id="toast-wrap"></div>
+
+<!-- ── Add Entity Modal ──────────────────────────── -->
+<div class="modal fade" id="addEntityModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--bg-panel);border-color:var(--border)">
+      <div class="modal-header" style="border-color:var(--border)">
+        <h5 class="modal-title">Add Entity</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2">
+          <label class="form-label small">Name *</label>
+          <input id="ae-name" type="text" class="form-control" placeholder="Entity name">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Type</label>
+          <select id="ae-type" class="form-select"></select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Category</label>
+          <select id="ae-cat" class="form-select"></select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Tags <span class="text-muted">(comma-separated)</span></label>
+          <input id="ae-tags" type="text" class="form-control" placeholder="tag1, tag2">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Description</label>
+          <textarea id="ae-desc" class="form-control" rows="3" placeholder="What is this?"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer" style="border-color:var(--border)">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-success" onclick="saveNewEntity()">Add Entity</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add Relationship Modal ───────────────────── -->
+<div class="modal fade" id="addRelModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--bg-panel);border-color:var(--border)">
+      <div class="modal-header" style="border-color:var(--border)">
+        <h5 class="modal-title">Add Relationship</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2">
+          <label class="form-label small">Source *</label>
+          <input id="ar-source" type="text" class="form-control" list="entity-datalist" placeholder="Source entity">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Relation</label>
+          <select id="ar-rel" class="form-select"></select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Target *</label>
+          <input id="ar-target" type="text" class="form-control" list="entity-datalist" placeholder="Target entity">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Description <span class="text-muted">(optional)</span></label>
+          <input id="ar-desc" type="text" class="form-control" placeholder="Brief description of the relationship">
+        </div>
+      </div>
+      <div class="modal-footer" style="border-color:var(--border)">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-success" onclick="saveNewRel()">Add Relationship</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Datalist for entity autocomplete -->
+<datalist id="entity-datalist"></datalist>
+
+<!-- ── Scripts ───────────────────────────────────────────────────────────── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.27.0/cytoscape.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tabulator/6.2.0/js/tabulator.min.js"></script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════════
+const TYPE_COLORS = {
+  person:       '#4A90D9',
+  project:      '#2ECC71',
+  concept:      '#9B59B6',
+  tool:         '#E67E22',
+  task:         '#E74C3C',
+  goal:         '#F39C12',
+  note:         '#7F8C8D',
+  preference:   '#E91E8C',
+  resource:     '#1ABC9C',
+  event:        '#3498DB',
+  place:        '#795548',
+  organization: '#3F51B5',
+  skill:        '#00BCD4',
+  habit:        '#8E44AD',
+};
+const CAT_COLORS = {
+  gamedev:  '#FF6B6B',
+  homelab:  '#4ECDC4',
+  dev:      '#45B7D1',
+  work:     '#96CEB4',
+  learning: '#FFD93D',
+  gaming:   '#C77DFF',
+  personal: '#06D6A0',
+  health:   '#F7DC6F',
+  finance:  '#A8E6CF',
+  social:   '#FFB347',
+  creative: '#FF8B94',
+  ideas:    '#B5B9FF',
+};
+const TYPES = Object.keys(TYPE_COLORS);
+const CATS  = Object.keys(CAT_COLORS);
+const RELATIONS = [
+  'works_on','created_by','uses','part_of','depends_on','blocks',
+  'related_to','knows','member_of','learned_from','interested_in',
+  'prefers','located_at','attended','owns','references','inspired_by',
+  'next_step','about','mentions',
+];
+
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+let cy = null;
+let entTable = null, relTable = null;
+let graphData = { nodes: [], edges: [] };
+let viewMode  = 'full';    // 'full' | 'ego' | 'filtered'
+let colorMode = 'type';    // 'type' | 'category'
+let showEdgeLabels = true;
+let egoCenter = null;      // entity name for ego view
+let detailName = null;     // currently open detail entity
+let detailEdits = {};      // unsaved field edits
+let quickFilterStr = '';
+
+// ═══════════════════════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════════════════════
+function toast(msg, type='ok') {
+  const el = document.createElement('div');
+  el.className = `g-toast ${type}`;
+  el.textContent = msg;
+  document.getElementById('toast-wrap').appendChild(el);
+  requestAnimationFrame(() => { el.classList.add('show'); });
+  setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 250); }, 3200);
+}
+
+async function apiFetch(url, opts={}) {
+  const r = await fetch(url, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+  return data;
+}
+
+function nodeColor(d) {
+  return colorMode === 'type'
+    ? (TYPE_COLORS[d.type]     || '#888')
+    : (CAT_COLORS[d.category]  || '#888');
+}
+
+function nodeSize(degree) {
+  return Math.max(28, Math.min(72, 22 + degree * 4));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════════════════════════
+function switchTab(name) {
+  ['graph','entities','rels','search'].forEach(t => {
+    document.getElementById(`pane-${t === 'entities' ? 'entities' : t}`).classList.toggle('active', false);
+    document.getElementById(`btn-${t}`).classList.toggle('active', false);
+  });
+  const paneId = name === 'rels' ? 'pane-rels' : `pane-${name}`;
+  document.getElementById(paneId).classList.add('active');
+  document.getElementById(`btn-${name}`).classList.add('active');
+
+  if (name === 'entities' && entTable) setTimeout(() => entTable.redraw(), 50);
+  if (name === 'rels'      && relTable) setTimeout(() => relTable.redraw(), 50);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LOAD ALL DATA
+// ═══════════════════════════════════════════════════════════════
+async function loadAll() {
+  try {
+    graphData = await apiFetch('/api/graph');
+    renderCytoscape();
+    refreshTables();
+    updateBadges();
+    updateDatalist();
+  } catch(e) {
+    toast('Failed to load graph: ' + e.message, 'err');
+  }
+}
+
+function updateBadges() {
+  document.getElementById('stat-nodes').textContent = `${graphData.nodes.length} nodes`;
+  document.getElementById('stat-edges').textContent = `${graphData.edges.length} edges`;
+  document.getElementById('ent-count').textContent  = graphData.nodes.length;
+  document.getElementById('rel-count').textContent  = graphData.edges.length;
+}
+
+function updateDatalist() {
+  const dl = document.getElementById('entity-datalist');
+  dl.innerHTML = graphData.nodes.map(n => `<option value="${n.id}">`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CYTOSCAPE
+// ═══════════════════════════════════════════════════════════════
+function buildCyElements() {
+  const nodes = graphData.nodes.map(n => ({
+    data: { id: n.id, type: n.type, category: n.category,
+            tags: n.tags, description: n.description, degree: n.degree },
+  }));
+  const edges = graphData.edges.map((e, i) => ({
+    data: { id: `e_${i}`, source: e.source, target: e.target,
+            label: e.relation, description: e.description },
+  }));
+  return [...nodes, ...edges];
+}
+
+function cyStyle() {
+  return [
+    {
+      selector: 'node',
+      style: {
+        'background-color': n => nodeColor(n.data()),
+        'width':  n => nodeSize(n.data('degree')),
+        'height': n => nodeSize(n.data('degree')),
+        'label':  'data(id)',
+        'color':  '#e6edf3',
+        'font-size': '10px',
+        'text-valign': 'bottom',
+        'text-margin-y': '4px',
+        'text-outline-width': 2,
+        'text-outline-color': '#0d1117',
+        'border-width': 0,
+        'transition-property': 'background-color, border-color',
+        'transition-duration': '0.2s',
+      },
+    },
+    {
+      selector: 'node:selected',
+      style: {
+        'border-width': 3,
+        'border-color': '#e6edf3',
+      },
+    },
+    {
+      selector: 'node.ego-center',
+      style: {
+        'border-width': 4,
+        'border-color': '#388bfd',
+      },
+    },
+    {
+      selector: 'node.dimmed',
+      style: { 'opacity': 0.15 },
+    },
+    {
+      selector: 'edge',
+      style: {
+        'width': 1.5,
+        'line-color': '#30363d',
+        'target-arrow-color': '#30363d',
+        'target-arrow-shape': 'triangle',
+        'curve-style': 'bezier',
+        'label': showEdgeLabels ? 'data(label)' : '',
+        'color': '#8b949e',
+        'font-size': '8px',
+        'text-background-color': '#0d1117',
+        'text-background-opacity': 0.85,
+        'text-background-padding': '2px',
+        'transition-property': 'opacity, line-color',
+        'transition-duration': '0.2s',
+      },
+    },
+    {
+      selector: 'edge.dimmed',
+      style: { 'opacity': 0.08 },
+    },
+  ];
+}
+
+function renderCytoscape() {
+  const container = document.getElementById('cy');
+  if (cy) {
+    const positions = {};
+    cy.nodes().forEach(n => { positions[n.id()] = n.position(); });
+    cy.destroy();
+    cy = null;
+    _buildCy(positions);
+  } else {
+    _buildCy({});
+  }
+}
+
+function _buildCy(savedPositions) {
+  const container = document.getElementById('cy');
+  const elements = buildCyElements();
+  const layout = Object.keys(savedPositions).length > 0
+    ? { name: 'preset', positions: id => savedPositions[id] || { x: Math.random()*600, y: Math.random()*400 } }
+    : { name: 'cose', idealEdgeLength: 120, nodeOverlap: 20, animate: false,
+        gravity: 0.4, numIter: 1500, coolingFactor: 0.99, padding: 40 };
+
+  cy = cytoscape({
+    container,
+    elements,
+    style: cyStyle(),
+    layout,
+    wheelSensitivity: 0.3,
+  });
+
+  cy.on('tap', 'node', e => onNodeTap(e.target));
+  cy.on('tap', evt => { if (evt.target === cy) onBackgroundTap(); });
+  cy.on('dblclick', 'node', e => { setEgoCenter(e.target.id()); });
+
+  applyViewMode();
+  renderLegend();
+}
+
+function onNodeTap(node) {
+  cy.nodes().unselect();
+  node.select();
+  openDetail(node.id());
+  if (viewMode === 'ego') setEgoCenter(node.id());
+}
+
+function onBackgroundTap() {
+  if (viewMode !== 'ego') closeDetail();
+}
+
+function relayout() {
+  if (!cy) return;
+  cy.layout({
+    name: 'cose', idealEdgeLength: 120, nodeOverlap: 20,
+    animate: true, animationDuration: 600, gravity: 0.4, numIter: 1500, padding: 40,
+  }).run();
+}
+
+function fitGraph() {
+  if (cy) cy.fit(40);
+}
+
+// ── View modes ─────────────────────────────────────────────────
+function setViewMode(mode) {
+  viewMode = mode;
+  ['full','ego','filtered'].forEach(m =>
+    document.getElementById(`vm-${m}`).classList.toggle('active', m === mode));
+  document.getElementById('filter-bar').classList.toggle('visible', mode === 'filtered');
+  document.getElementById('ego-hint').style.display = mode === 'ego' ? 'block' : 'none';
+  applyViewMode();
+}
+
+function applyViewMode() {
+  if (!cy) return;
+  cy.nodes().removeClass('dimmed');
+  cy.edges().removeClass('dimmed');
+  cy.nodes().show();
+  cy.edges().show();
+
+  if (viewMode === 'ego' && egoCenter) {
+    const center = cy.getElementById(egoCenter);
+    if (!center.length) return;
+    const neighbors = center.neighborhood();
+    cy.nodes().not(center).not(neighbors.nodes()).addClass('dimmed');
+    cy.edges().not(neighbors.edges()).not(center.connectedEdges()).addClass('dimmed');
+    center.addClass('ego-center');
+    document.getElementById('ego-hint').style.display = 'none';
+  } else if (viewMode === 'filtered') {
+    applyGraphFilter();
+  }
+}
+
+function setEgoCenter(name) {
+  if (egoCenter) {
+    const prev = cy.getElementById(egoCenter);
+    if (prev.length) prev.removeClass('ego-center');
+  }
+  egoCenter = name;
+  viewMode = 'ego';
+  document.getElementById('vm-ego').classList.add('active');
+  document.getElementById('vm-full').classList.remove('active');
+  document.getElementById('vm-filtered').classList.remove('active');
+  applyViewMode();
+}
+
+function applyGraphFilter() {
+  if (!cy || viewMode !== 'filtered') return;
+  const type = document.getElementById('f-type').value;
+  const cat  = document.getElementById('f-cat').value;
+  const tag  = document.getElementById('f-tag').value.trim().toLowerCase();
+
+  cy.nodes().show();
+  cy.nodes().forEach(n => {
+    const d = n.data();
+    const show =
+      (!type || d.type === type) &&
+      (!cat  || d.category === cat) &&
+      (!tag  || (d.tags || []).some(t => t.includes(tag)));
+    if (!show) n.hide();
+  });
+  cy.edges().forEach(e => {
+    if (e.source().hidden() || e.target().hidden()) e.hide();
+    else e.show();
+  });
+}
+
+// ── Color mode ─────────────────────────────────────────────────
+function setColorMode(mode) {
+  colorMode = mode;
+  document.getElementById('cm-type').classList.toggle('active', mode === 'type');
+  document.getElementById('cm-cat').classList.toggle('active',  mode === 'category');
+  if (!cy) return;
+  cy.nodes().forEach(n => n.style('background-color', nodeColor(n.data())));
+  renderLegend();
+}
+
+// ── Edge labels ────────────────────────────────────────────────
+function toggleEdgeLabels(on) {
+  showEdgeLabels = on;
+  if (!cy) return;
+  cy.edges().style('label', on ? 'data(label)' : '');
+}
+
+// ── Legend ─────────────────────────────────────────────────────
+function renderLegend() {
+  const palette = colorMode === 'type' ? TYPE_COLORS : CAT_COLORS;
+  const present = new Set(graphData.nodes.map(n => colorMode === 'type' ? n.type : n.category));
+  const rows = Object.entries(palette)
+    .filter(([k]) => present.has(k))
+    .map(([k, c]) => `<div class="l-row"><span class="l-dot" style="background:${c}"></span><span>${k}</span></div>`)
+    .join('');
+  document.getElementById('legend').innerHTML =
+    `<div class="l-title">${colorMode === 'type' ? 'Entity type' : 'Category'}</div>${rows}`;
+}
+
+// ── Quick filter (highlights matching nodes) ───────────────────
+function quickFilter(val) {
+  quickFilterStr = val.toLowerCase().trim();
+  if (!cy) return;
+  if (!quickFilterStr) {
+    cy.nodes().removeClass('dimmed');
+    cy.edges().removeClass('dimmed');
+    return;
+  }
+  cy.nodes().forEach(n => {
+    const d = n.data();
+    const match = d.id.toLowerCase().includes(quickFilterStr) ||
+                  (d.tags || []).some(t => t.includes(quickFilterStr)) ||
+                  (d.type || '').includes(quickFilterStr) ||
+                  (d.category || '').includes(quickFilterStr);
+    n.toggleClass('dimmed', !match);
+  });
+  cy.edges().forEach(e => {
+    e.toggleClass('dimmed', e.source().hasClass('dimmed') || e.target().hasClass('dimmed'));
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TABLES
+// ═══════════════════════════════════════════════════════════════
+function initTables() {
+  entTable = new Tabulator('#ent-table', {
+    data: [],
+    height: '100%',
+    layout: 'fitColumns',
+    selectable: true,
+    movableRows: false,
+    columns: [
+      { formatter: 'rowSelection', titleFormatter: 'rowSelection', hozAlign: 'center', headerSort: false, width: 40 },
+      { title: 'Name',        field: 'id',          sorter: 'string', widthGrow: 1.5, formatter: nameFormatter },
+      { title: 'Type',        field: 'type',        sorter: 'string', width: 110, editor: 'select',
+        editorParams: { values: TYPES }, cellEdited: onEntCellEdited },
+      { title: 'Category',    field: 'category',    sorter: 'string', width: 110, editor: 'select',
+        editorParams: { values: CATS  }, cellEdited: onEntCellEdited },
+      { title: 'Tags',        field: 'tags',        sorter: 'string', widthGrow: 1,
+        formatter: c => (c.getValue()||[]).map(t => `<span class="tag-badge">${t}</span>`).join(' '),
+        editor: 'input', cellEdited: onEntCellEditedTags },
+      { title: 'Description', field: 'description', sorter: 'string', widthGrow: 2, editor: 'input', cellEdited: onEntCellEdited },
+      { title: '', headerSort: false, width: 42,
+        formatter: () => '<i class="bi bi-trash text-danger"></i>',
+        cellClick: (_, cell) => deleteEntity(cell.getRow().getData().id) },
+    ],
+    rowSelectionChanged: rows => {
+      document.getElementById('bulk-del-ent').style.display = rows.length ? '' : 'none';
+    },
+  });
+
+  relTable = new Tabulator('#rel-table', {
+    data: [],
+    height: '100%',
+    layout: 'fitColumns',
+    selectable: true,
+    columns: [
+      { formatter: 'rowSelection', titleFormatter: 'rowSelection', hozAlign: 'center', headerSort: false, width: 40 },
+      { title: 'Source',      field: 'source',      sorter: 'string', widthGrow: 1 },
+      { title: 'Relation',    field: 'relation',    sorter: 'string', width: 140, editor: 'select',
+        editorParams: { values: RELATIONS }, cellEdited: onRelCellEdited },
+      { title: 'Target',      field: 'target',      sorter: 'string', widthGrow: 1 },
+      { title: 'Description', field: 'description', sorter: 'string', widthGrow: 2, editor: 'input', cellEdited: onRelCellEdited },
+      { title: '', headerSort: false, width: 42,
+        formatter: () => '<i class="bi bi-trash text-danger"></i>',
+        cellClick: (_, cell) => deleteRel(cell.getRow().getData()) },
+    ],
+    rowSelectionChanged: rows => {
+      document.getElementById('bulk-del-rel').style.display = rows.length ? '' : 'none';
+    },
+  });
+}
+
+function nameFormatter(cell) {
+  const id = cell.getValue();
+  return `<span style="cursor:pointer;color:var(--accent)" onclick="openDetail('${id.replace(/'/g,"\\'")}');switchTab('graph')">${id}</span>`;
+}
+
+function refreshTables() {
+  if (entTable) entTable.setData(graphData.nodes);
+  if (relTable) relTable.setData(graphData.edges);
+}
+
+// ── Table cell edit handlers ───────────────────────────────────
+async function onEntCellEdited(cell) {
+  const row = cell.getRow().getData();
+  try {
+    await apiFetch('/api/remember', {
+      method: 'POST',
+      body: JSON.stringify({ entities: [{
+        name: row.id, type: row.type, category: row.category,
+        tags: row.tags, description: row.description,
+      }]})
+    });
+    // Sync graphData
+    const n = graphData.nodes.find(n => n.id === row.id);
+    if (n) Object.assign(n, row);
+    if (cy) {
+      const node = cy.getElementById(row.id);
+      if (node.length) node.data(row);
+    }
+    toast('Saved');
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function onEntCellEditedTags(cell) {
+  // Convert comma-separated string back to array
+  const raw = cell.getValue();
+  const tags = typeof raw === 'string'
+    ? raw.split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
+    : (raw || []);
+  cell.getRow().update({ tags });
+  await onEntCellEdited(cell);
+}
+
+async function onRelCellEdited(cell) {
+  const row   = cell.getRow().getData();
+  const field = cell.getColumn().getField();
+  const oldVal = cell.getOldValue();
+
+  if (field === 'relation') {
+    // Forget old, create new
+    try {
+      await apiFetch('/api/forget_relationship', {
+        method: 'POST',
+        body: JSON.stringify({ source: row.source, target: row.target, relation: oldVal }),
+      });
+      await apiFetch('/api/link', {
+        method: 'POST',
+        body: JSON.stringify({ source: row.source, target: row.target,
+                               relation: row.relation, description: row.description }),
+      });
+      toast('Relationship updated');
+    } catch(e) { toast(e.message, 'err'); }
+  } else {
+    try {
+      await apiFetch('/api/link', {
+        method: 'POST',
+        body: JSON.stringify({ source: row.source, target: row.target,
+                               relation: row.relation, description: row.description }),
+      });
+      toast('Saved');
+    } catch(e) { toast(e.message, 'err'); }
+  }
+}
+
+// ── Bulk delete ────────────────────────────────────────────────
+async function bulkDeleteEntities() {
+  const rows = entTable.getSelectedData();
+  if (!rows.length) return;
+  if (!confirm(`Delete ${rows.length} entity/entities?`)) return;
+  for (const r of rows) await deleteEntity(r.id, false);
+  toast(`Deleted ${rows.length} entities`);
+  await loadAll();
+}
+
+async function bulkDeleteRels() {
+  const rows = relTable.getSelectedData();
+  if (!rows.length) return;
+  if (!confirm(`Delete ${rows.length} relationship(s)?`)) return;
+  for (const r of rows) await deleteRel(r, false);
+  toast(`Deleted ${rows.length} relationships`);
+  await loadAll();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DETAIL PANEL
+// ═══════════════════════════════════════════════════════════════
+function openDetail(name) {
+  detailName  = name;
+  detailEdits = {};
+  const node  = graphData.nodes.find(n => n.id === name);
+  if (!node) return;
+
+  document.getElementById('detail-name').textContent = name;
+  document.getElementById('detail').classList.add('open');
+
+  const fields = { type: node.type, category: node.category,
+                   tags: (node.tags||[]).join(', '), description: node.description };
+  Object.entries(fields).forEach(([f, v]) => {
+    const el = document.getElementById(`dv-${f}`);
+    el.textContent = v || '—';
+    el.classList.remove('editing');
+    el.innerHTML = f === 'tags'
+      ? (node.tags||[]).map(t => `<span class="tag-badge">${t}</span>`).join(' ') || '<span class="text-muted">—</span>'
+      : (v || '<span class="text-muted">—</span>');
+  });
+
+  // Relationships
+  const rels = graphData.edges.filter(e => e.source === name || e.target === name);
+  const listEl = document.getElementById('detail-rels-list');
+  listEl.innerHTML = rels.length
+    ? rels.map(r => {
+        const other = r.source === name ? r.target : r.source;
+        const dir   = r.source === name ? '→' : '←';
+        return `<div class="rel-item" onclick="openDetail('${other.replace(/'/g,"\\'")}')">
+          <span class="rel-tag">${r.relation}</span>
+          <span style="color:var(--text-muted);font-size:.75rem">${dir}</span> ${other}
+        </div>`;
+      }).join('')
+    : '<span class="text-muted" style="font-size:.8rem">No relationships</span>';
+
+  // Highlight node in graph
+  if (cy) {
+    cy.nodes().unselect();
+    const n = cy.getElementById(name);
+    if (n.length) { n.select(); cy.animate({ center: { eles: n }, zoom: Math.max(cy.zoom(), 1.2) }, { duration: 300 }); }
+  }
+}
+
+function closeDetail() {
+  detailName = null;
+  detailEdits = {};
+  document.getElementById('detail').classList.remove('open');
+  if (cy) cy.nodes().unselect();
+}
+
+function startEdit(field) {
+  const node = graphData.nodes.find(n => n.id === detailName);
+  if (!node) return;
+  const el = document.getElementById(`dv-${field}`);
+  el.classList.add('editing');
+  el.innerHTML = '';
+
+  const current = detailEdits[field] !== undefined ? detailEdits[field]
+    : (field === 'tags' ? (node.tags||[]).join(', ') : (node[field] || ''));
+
+  let input;
+  if (field === 'type') {
+    input = document.createElement('select');
+    input.className = 'd-input';
+    TYPES.forEach(t => {
+      const o = document.createElement('option');
+      o.value = t; o.textContent = t;
+      if (t === current) o.selected = true;
+      input.appendChild(o);
+    });
+  } else if (field === 'category') {
+    input = document.createElement('select');
+    input.className = 'd-input';
+    CATS.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c; o.textContent = c;
+      if (c === current) o.selected = true;
+      input.appendChild(o);
+    });
+  } else if (field === 'description') {
+    input = document.createElement('textarea');
+    input.className = 'd-input';
+    input.value = current;
+    input.rows = 4;
+  } else {
+    input = document.createElement('input');
+    input.className = 'd-input';
+    input.type = 'text';
+    input.value = current;
+  }
+  input.onchange = input.oninput = () => { detailEdits[field] = input.value; };
+  el.appendChild(input);
+  input.focus();
+}
+
+async function saveDetail() {
+  if (!detailName) return;
+  const node = graphData.nodes.find(n => n.id === detailName);
+  if (!node) return;
+
+  const tagsRaw = detailEdits.tags !== undefined ? detailEdits.tags : (node.tags||[]).join(', ');
+  const tags = tagsRaw.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+
+  const entity = {
+    name:        detailName,
+    type:        detailEdits.type        !== undefined ? detailEdits.type        : node.type,
+    category:    detailEdits.category    !== undefined ? detailEdits.category    : node.category,
+    tags,
+    description: detailEdits.description !== undefined ? detailEdits.description : node.description,
+  };
+
+  try {
+    await apiFetch('/api/remember', { method: 'POST', body: JSON.stringify({ entities: [entity] }) });
+    Object.assign(node, { type: entity.type, category: entity.category,
+                          tags: entity.tags, description: entity.description });
+    if (cy) cy.getElementById(detailName).data({ type: entity.type, category: entity.category,
+                                                  tags: entity.tags, description: entity.description });
+    toast('Saved');
+    detailEdits = {};
+    openDetail(detailName);  // re-render panel
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+function cancelDetail() {
+  detailEdits = {};
+  if (detailName) openDetail(detailName);
+}
+
+async function deleteDetailNode() {
+  if (!detailName) return;
+  if (!confirm(`Delete "${detailName}" from memory?`)) return;
+  await deleteEntity(detailName);
+  closeDetail();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CRUD
+// ═══════════════════════════════════════════════════════════════
+async function deleteEntity(name, reload=true) {
+  try {
+    await apiFetch('/api/forget', { method: 'POST', body: JSON.stringify({ entity: name }) });
+    toast(`Forgot "${name}"`);
+    if (reload) await loadAll();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function deleteRel(row, reload=true) {
+  try {
+    await apiFetch('/api/forget_relationship', {
+      method: 'POST',
+      body: JSON.stringify({ source: row.source, target: row.target, relation: row.relation }),
+    });
+    toast(`Removed ${row.source} → ${row.target}`);
+    if (reload) await loadAll();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── Add entity ─────────────────────────────────────────────────
+function showAddEntityModal() {
+  const sel = (id, arr) => {
+    const el = document.getElementById(id);
+    el.innerHTML = arr.map(v => `<option value="${v}">${v}</option>`).join('');
+  };
+  sel('ae-type', TYPES);
+  sel('ae-cat', CATS);
+  ['ae-name','ae-tags','ae-desc'].forEach(id => { document.getElementById(id).value = ''; });
+  new bootstrap.Modal(document.getElementById('addEntityModal')).show();
+}
+
+async function saveNewEntity() {
+  const name = document.getElementById('ae-name').value.trim();
+  if (!name) { toast('Name is required', 'err'); return; }
+  const entity = {
+    name,
+    type:        document.getElementById('ae-type').value,
+    category:    document.getElementById('ae-cat').value,
+    tags:        document.getElementById('ae-tags').value.split(',').map(t=>t.trim().toLowerCase()).filter(Boolean),
+    description: document.getElementById('ae-desc').value.trim(),
+  };
+  try {
+    await apiFetch('/api/remember', { method: 'POST', body: JSON.stringify({ entities: [entity] }) });
+    bootstrap.Modal.getInstance(document.getElementById('addEntityModal')).hide();
+    toast(`Added "${name}"`);
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── Add relationship ───────────────────────────────────────────
+function showAddRelModal() {
+  const sel = document.getElementById('ar-rel');
+  sel.innerHTML = RELATIONS.map(r => `<option value="${r}">${r}</option>`).join('');
+  ['ar-source','ar-target','ar-desc'].forEach(id => { document.getElementById(id).value = ''; });
+  new bootstrap.Modal(document.getElementById('addRelModal')).show();
+}
+
+async function saveNewRel() {
+  const src = document.getElementById('ar-source').value.trim();
+  const tgt = document.getElementById('ar-target').value.trim();
+  if (!src || !tgt) { toast('Source and target are required', 'err'); return; }
+  try {
+    await apiFetch('/api/link', {
+      method: 'POST',
+      body: JSON.stringify({
+        source:      src,
+        target:      tgt,
+        relation:    document.getElementById('ar-rel').value,
+        description: document.getElementById('ar-desc').value.trim(),
+      }),
+    });
+    bootstrap.Modal.getInstance(document.getElementById('addRelModal')).hide();
+    toast(`Linked ${src} → ${tgt}`);
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── Filter dropdowns ───────────────────────────────────────────
+function populateFilterDropdowns() {
+  const typeEl = document.getElementById('f-type');
+  const catEl  = document.getElementById('f-cat');
+  typeEl.innerHTML = '<option value="">Any type</option>' +
+    TYPES.map(t => `<option value="${t}">${t}</option>`).join('');
+  catEl.innerHTML  = '<option value="">Any category</option>' +
+    CATS.map(c => `<option value="${c}">${c}</option>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SEMANTIC SEARCH
+// ═══════════════════════════════════════════════════════════════
+async function runSearch() {
+  const q = document.getElementById('sem-input').value.trim();
+  if (!q) return;
+  const el = document.getElementById('search-results');
+  el.innerHTML = '<div class="text-muted">Searching…</div>';
+  try {
+    const res = await apiFetch('/api/search', { method: 'POST', body: JSON.stringify({ query: q }) });
+    const items = [
+      ...(res.entities || []).map(e => ({ name: e.name, score: e.score, text: e.text, kind: 'entity' })),
+      ...(res.notes    || []).map(n => ({ name: n.source || 'note', score: n.score, text: n.text, kind: 'note' })),
+    ].sort((a,b) => (b.score||0) - (a.score||0));
+
+    if (!items.length) {
+      el.innerHTML = '<div class="text-muted">No results.</div>';
+      return;
+    }
+    el.innerHTML = items.map(item => `
+      <div class="search-result mb-2" onclick="openDetail('${(item.name||'').replace(/'/g,"\\'")}');switchTab('graph')">
+        <span class="search-score">${item.score != null ? item.score.toFixed(3) : ''}</span>
+        <div class="search-name">${item.name || ''}</div>
+        <div class="search-text">${(item.text||'').slice(0,180)}${(item.text||'').length>180?'…':''}</div>
+      </div>`).join('');
+  } catch(e) {
+    el.innerHTML = `<div class="text-danger">${e.message}</div>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WEBSOCKET DELTA
+// ═══════════════════════════════════════════════════════════════
+function initWebSocket() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws`);
+  const dot = document.getElementById('ws-status');
+
+  ws.onopen = () => {
+    dot.classList.remove('off');
+    // keepalive ping every 25s
+    setInterval(() => { if (ws.readyState === 1) ws.send('ping'); }, 25000);
+  };
+  ws.onclose = () => {
+    dot.classList.add('off');
+    setTimeout(initWebSocket, 3000);  // reconnect
+  };
+  ws.onerror = () => dot.classList.add('off');
+
+  ws.onmessage = evt => {
+    try {
+      const msg = JSON.parse(evt.data);
+      if (msg.type !== 'delta') return;
+      applyDelta(msg);
+    } catch(_) {}
+  };
+}
+
+function applyDelta(msg) {
+  if (msg.op === 'forget') {
+    // Remove from local data
+    graphData.nodes = graphData.nodes.filter(n => n.id !== msg.entity);
+    graphData.edges = graphData.edges.filter(e => e.source !== msg.entity && e.target !== msg.entity);
+    // Remove from Cytoscape
+    if (cy) cy.getElementById(msg.entity).remove();
+    // Close detail if was showing that node
+    if (detailName === msg.entity) closeDetail();
+
+  } else if (msg.op === 'forget_relationship') {
+    graphData.edges = graphData.edges.filter(e =>
+      !(e.source === msg.source && e.target === msg.target && e.relation === msg.relation));
+    if (cy) {
+      cy.edges().filter(e =>
+        e.data('source') === msg.source && e.data('target') === msg.target &&
+        e.data('label') === msg.relation
+      ).remove();
+    }
+
+  } else if (msg.op === 'upsert') {
+    // Calculate new degrees after update
+    for (const ent of (msg.entities || [])) {
+      const existing = graphData.nodes.find(n => n.id.toLowerCase() === ent.name.toLowerCase());
+      const tags = Array.isArray(ent.tags) ? ent.tags : [];
+      if (existing) {
+        Object.assign(existing, { type: ent.type, category: ent.category,
+                                  tags, description: ent.description });
+        if (cy) cy.getElementById(existing.id).data({ type: ent.type, category: ent.category, tags, description: ent.description });
+      } else {
+        const newNode = { id: ent.name, type: ent.type, category: ent.category,
+                          tags, description: ent.description, degree: 0 };
+        graphData.nodes.push(newNode);
+        if (cy) {
+          cy.add({ data: { id: ent.name, ...newNode },
+                   position: { x: Math.random()*400+100, y: Math.random()*300+100 } });
+          cy.getElementById(ent.name).style('background-color', nodeColor(newNode));
+        }
+      }
+    }
+    for (const rel of (msg.relationships || [])) {
+      const exists = graphData.edges.find(e =>
+        e.source === rel.source && e.target === rel.target && e.relation === rel.relation);
+      if (!exists) {
+        graphData.edges.push({ source: rel.source, target: rel.target,
+                               relation: rel.relation, description: rel.description || '' });
+        if (cy) {
+          cy.add({ data: { id: `e_ext_${Date.now()}_${Math.random()}`,
+                           source: rel.source, target: rel.target,
+                           label: rel.relation, description: rel.description || '' }});
+        }
+      }
+    }
+    // Recompute degrees
+    const deg = {};
+    graphData.edges.forEach(e => {
+      deg[e.source] = (deg[e.source]||0) + 1;
+      deg[e.target] = (deg[e.target]||0) + 1;
+    });
+    graphData.nodes.forEach(n => {
+      n.degree = deg[n.id] || 0;
+      if (cy) { const cn = cy.getElementById(n.id); if (cn.length) { cn.data('degree', n.degree); cn.style({ width: nodeSize(n.degree), height: nodeSize(n.degree) }); } }
+    });
+  }
+
+  // Refresh tables & badges
+  refreshTables();
+  updateBadges();
+  updateDatalist();
+  if (detailName) openDetail(detailName);  // refresh detail panel
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+async function init() {
+  populateFilterDropdowns();
+  initTables();
+  await loadAll();
+  initWebSocket();
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

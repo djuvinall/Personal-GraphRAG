@@ -156,6 +156,20 @@ async def forget(entity: str) -> dict:
     return {"ok": True, "forgot": entity, "removed_from_graph": removed}
 
 
+async def forget_relationship(source: str, target: str, relation: str) -> dict:
+    """Tombstone a specific relationship in the journal.
+
+    The live LightRAG graph does not support single-edge deletion; the tombstone
+    takes effect on the next `python rebuild.py`. The dashboard removes the edge
+    from its view optimistically.
+    """
+    journal.append({"op": "forget_relationship",
+                    "source": source, "target": target, "relation": relation})
+    return {"ok": True,
+            "forgot_relationship": f"{source} -[{relation}]-> {target}",
+            "note": "tombstoned in journal; run rebuild.py to remove from graph index"}
+
+
 # ---------------------------------------------------------------------------
 # READ (no LLM)
 # ---------------------------------------------------------------------------
