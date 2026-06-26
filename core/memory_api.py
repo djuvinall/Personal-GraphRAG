@@ -13,6 +13,14 @@ relationship model — Claude is the relationship model.
 """
 from __future__ import annotations
 import json
+import sys
+from pathlib import Path
+
+# Make this module's own directory (core/) importable no matter how the process
+# was launched. The server/CLI entrypoints already do this, but doing it here too
+# means a stray launch (wrong cwd, alternate runner) can't break the lazy
+# `from lightrag_setup import create_rag` below with "No module named lightrag_setup".
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import journal
 import memory_store as ms

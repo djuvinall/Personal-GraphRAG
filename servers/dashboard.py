@@ -96,7 +96,32 @@ def _guard(request: Request) -> None:
 
 
 # ── graph data (journal replay — no LightRAG needed) ─────────────────────────
+# The journal is the source of truth and is append-only, so its (mtime, size) is a
+# sufficient cache key: any remember/forget/link appends a line and changes it,
+# which transparently invalidates the cache. This avoids re-replaying the entire
+# journal on every /api/graph|entities|relationships call (3× per page load).
+_GRAPH_CACHE: dict[str, Any] = {"sig": None, "data": None}
+
+
+def _journal_sig() -> tuple[int, int]:
+    try:
+        st = _JOURNAL.stat()
+        return (st.st_mtime_ns, st.st_size)
+    except FileNotFoundError:
+        return (0, 0)
+
+
 def _graph_data() -> dict[str, Any]:
+    """Cached wrapper around _compute_graph_data(), keyed on the journal's stat."""
+    sig = _journal_sig()
+    if _GRAPH_CACHE["sig"] == sig and _GRAPH_CACHE["data"] is not None:
+        return _GRAPH_CACHE["data"]
+    data = _compute_graph_data()
+    _GRAPH_CACHE["sig"], _GRAPH_CACHE["data"] = sig, data
+    return data
+
+
+def _compute_graph_data() -> dict[str, Any]:
     """Replay the journal and return nodes + edges with degree counts.
 
     Edge source/target are normalised to the canonical display name (the name
@@ -354,7 +379,13 @@ async def api_stats(request: Request):
 # ── WebSocket ─────────────────────────────────────────────────────────────────
 @app.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket):
-    # Localhost-only; no additional auth on the socket
+    # Gate on the same session auth as the REST API. This socket streams memory
+    # deltas (entity/relationship contents), and the server is reachable over the
+    # ngrok tunnel — not just localhost — so an unauthenticated client must not be
+    # allowed to subscribe when a password is configured.
+    if WEB_UI_PASSWORD and not websocket.session.get("authed"):
+        await websocket.close(code=1008)  # policy violation
+        return
     await manager.connect(websocket)
     try:
         while True:
@@ -368,7 +399,7 @@ async def ws_endpoint(websocket: WebSocket):
 # ── entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     port = int(os.environ.get("WEB_UI_PORT", "5000"))
-    print(f"Dashboard → http://localhost:{port}")
+    print(f"Dashboard -> http://localhost:{port}")
     if not WEB_UI_PASSWORD:
         print("  ⚠  WEB_UI_PASSWORD not set — running open (no auth)")
     uvicorn.run("dashboard:app", host="0.0.0.0", port=port, reload=False)

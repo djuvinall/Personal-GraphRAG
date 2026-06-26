@@ -12,7 +12,12 @@ folder or swap the embedding backend without editing code.
 import os
 from pathlib import Path
 
-BASE_DIR   = Path(__file__).parent
+# config.py lives in core/, but the data/ and graph/ dirs live at the REPO ROOT
+# (one level up) — that's the layout documented in CLAUDE.md and where the journal
+# actually is. Anchor on the repo root, NOT on this file's core/ dir, or the
+# defaults silently become core/data + core/graph (empty) and the graph "vanishes".
+CORE_DIR   = Path(__file__).resolve().parent
+BASE_DIR   = CORE_DIR.parent
 DATA_DIR   = Path(os.environ.get("PMEM_DATA_DIR",  BASE_DIR / "data"))
 GRAPH_DIR  = Path(os.environ.get("PMEM_GRAPH_DIR", BASE_DIR / "graph"))
 

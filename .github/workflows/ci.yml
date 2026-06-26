@@ -32,9 +32,9 @@ jobs:
         run: ruff check .
 
       - name: Offline core tests
-        run: python test_memory.py
+        run: python tests/test_memory.py
 
       - name: Integration test (hash backend, no Ollama)
         env:
           PMEM_EMBED_BACKEND: hash
-        run: python test_integration.py
+        run: python tests/test_integration.py

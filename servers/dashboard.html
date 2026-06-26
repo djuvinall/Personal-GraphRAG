@@ -189,7 +189,7 @@
           </div>
           <div class="sep"></div>
           <div class="form-check form-check-inline mb-0" style="font-size:.82rem">
-            <input class="form-check-input" type="checkbox" id="edge-labels-chk" checked
+            <input class="form-check-input" type="checkbox" id="edge-labels-chk"
                    onchange="toggleEdgeLabels(this.checked)">
             <label class="form-check-label" for="edge-labels-chk">Edge labels</label>
           </div>
@@ -200,6 +200,19 @@
           <button class="btn btn-outline-secondary btn-sm" onclick="fitGraph()" title="Fit to window">
             <i class="bi bi-fullscreen"></i>
           </button>
+          <div class="sep"></div>
+          <span class="text-muted" style="font-size:.8rem" title="Hide nodes with fewer connections than this">Min&nbsp;deg:</span>
+          <input id="f-mindeg" type="range" min="0" max="10" value="0" step="1"
+                 style="width:90px" oninput="onDensityChange()" title="Minimum degree to show">
+          <span id="mindeg-val" class="text-muted" style="font-size:.78rem;width:1ch">0</span>
+          <div class="form-check form-check-inline mb-0" style="font-size:.82rem">
+            <input class="form-check-input" type="checkbox" id="f-hideleaves" onchange="onDensityChange()">
+            <label class="form-check-label" for="f-hideleaves" title="Hide nodes with only one connection">Hide leaves</label>
+          </div>
+          <div class="form-check form-check-inline mb-0" style="font-size:.82rem">
+            <input class="form-check-input" type="checkbox" id="f-hidestubs" onchange="onDensityChange()">
+            <label class="form-check-label" for="f-hidestubs" title="Hide auto-stubbed placeholder nodes (referenced but not yet described)">Hide stubs</label>
+          </div>
         </div>
 
         <!-- Filter bar (visible in 'filtered' mode) -->
@@ -450,7 +463,7 @@ let entTable = null, relTable = null;
 let graphData = { nodes: [], edges: [] };
 let viewMode  = 'full';    // 'full' | 'ego' | 'filtered'
 let colorMode = 'type';    // 'type' | 'category'
-let showEdgeLabels = true;
+let showEdgeLabels = false; // off by default — biggest source of canvas clutter
 let egoCenter = null;      // entity name for ego view
 let detailName = null;     // currently open detail entity
 let detailEdits = {};      // unsaved field edits
@@ -524,6 +537,9 @@ function updateBadges() {
   document.getElementById('stat-edges').textContent = `${graphData.edges.length} edges`;
   document.getElementById('ent-count').textContent  = graphData.nodes.length;
   document.getElementById('rel-count').textContent  = graphData.edges.length;
+  const maxDeg = graphData.nodes.reduce((m, n) => Math.max(m, n.degree || 0), 0);
+  const slider = document.getElementById('f-mindeg');
+  if (slider) slider.max = Math.max(1, maxDeg);
 }
 
 function updateDatalist() {
@@ -557,6 +573,8 @@ function cyStyle() {
         'label':  'data(id)',
         'color':  '#e6edf3',
         'font-size': '10px',
+        // Auto-declutter: labels fade out when zoomed out, appear as you zoom in.
+        'min-zoomed-font-size': 7,
         'text-valign': 'bottom',
         'text-margin-y': '4px',
         'text-outline-width': 2,
@@ -571,6 +589,16 @@ function cyStyle() {
       style: {
         'border-width': 3,
         'border-color': '#e6edf3',
+      },
+    },
+    {
+      // Hover/focus highlight — force the label visible regardless of zoom.
+      selector: 'node.hl',
+      style: {
+        'min-zoomed-font-size': 0,
+        'font-size': '12px',
+        'color': '#ffffff',
+        'z-index': 99,
       },
     },
     {
@@ -595,6 +623,7 @@ function cyStyle() {
         'label': showEdgeLabels ? 'data(label)' : '',
         'color': '#8b949e',
         'font-size': '8px',
+        'min-zoomed-font-size': 7,
         'text-background-color': '#0d1117',
         'text-background-opacity': 0.85,
         'text-background-padding': '2px',
@@ -627,8 +656,9 @@ function _buildCy(savedPositions) {
   const elements = buildCyElements();
   const layout = Object.keys(savedPositions).length > 0
     ? { name: 'preset', positions: id => savedPositions[id] || { x: Math.random()*600, y: Math.random()*400 } }
-    : { name: 'cose', idealEdgeLength: 120, nodeOverlap: 20, animate: false,
-        gravity: 0.4, numIter: 1500, coolingFactor: 0.99, padding: 40 };
+    : { name: 'cose', idealEdgeLength: 150, nodeOverlap: 30, nodeRepulsion: 9000,
+        componentSpacing: 130, animate: false, gravity: 0.25, numIter: 1500,
+        coolingFactor: 0.99, padding: 50 };
 
   cy = cytoscape({
     container,
@@ -641,6 +671,8 @@ function _buildCy(savedPositions) {
   cy.on('tap', 'node', e => onNodeTap(e.target));
   cy.on('tap', evt => { if (evt.target === cy) onBackgroundTap(); });
   cy.on('dblclick', 'node', e => { setEgoCenter(e.target.id()); });
+  cy.on('mouseover', 'node', e => hoverFocus(e.target));
+  cy.on('mouseout',  'node', () => hoverUnfocus());
 
   applyViewMode();
   renderLegend();
@@ -660,8 +692,9 @@ function onBackgroundTap() {
 function relayout() {
   if (!cy) return;
   cy.layout({
-    name: 'cose', idealEdgeLength: 120, nodeOverlap: 20,
-    animate: true, animationDuration: 600, gravity: 0.4, numIter: 1500, padding: 40,
+    name: 'cose', idealEdgeLength: 150, nodeOverlap: 30, nodeRepulsion: 9000,
+    componentSpacing: 130, animate: true, animationDuration: 600, gravity: 0.25,
+    numIter: 1500, padding: 50,
   }).run();
 }
 
@@ -681,10 +714,11 @@ function setViewMode(mode) {
 
 function applyViewMode() {
   if (!cy) return;
-  cy.nodes().removeClass('dimmed');
+  cy.nodes().removeClass('dimmed hl');
   cy.edges().removeClass('dimmed');
   cy.nodes().show();
   cy.edges().show();
+  applyDensity();   // hide stubs / leaves / low-degree before mode logic
 
   if (viewMode === 'ego' && egoCenter) {
     const center = cy.getElementById(egoCenter);
@@ -697,6 +731,47 @@ function applyViewMode() {
   } else if (viewMode === 'filtered') {
     applyGraphFilter();
   }
+}
+
+// ── Density controls (hide noise) ───────────────────────────────
+function isStub(d) {
+  return (d.description || '').startsWith('(referenced; details not yet recorded)');
+}
+
+function applyDensity() {
+  if (!cy) return;
+  const minDeg     = parseInt(document.getElementById('f-mindeg').value, 10) || 0;
+  const hideLeaves = document.getElementById('f-hideleaves').checked;
+  const hideStubs  = document.getElementById('f-hidestubs').checked;
+  cy.nodes().forEach(n => {
+    const d = n.data();
+    const deg = d.degree || 0;
+    if (deg < minDeg || (hideLeaves && deg <= 1) || (hideStubs && isStub(d))) n.hide();
+  });
+  cy.edges().forEach(e => { if (e.source().hidden() || e.target().hidden()) e.hide(); });
+}
+
+function onDensityChange() {
+  document.getElementById('mindeg-val').textContent =
+    document.getElementById('f-mindeg').value;
+  applyViewMode();
+  if (quickFilterStr) quickFilter(quickFilterStr);
+}
+
+// ── Hover focus (dim everything except the node + its neighbours) ─
+function hoverFocus(node) {
+  if (!cy || viewMode === 'ego' || quickFilterStr) return;
+  const focus = node.neighborhood().add(node);
+  cy.elements(':visible').addClass('dimmed');
+  focus.removeClass('dimmed');
+  focus.nodes().addClass('hl');
+}
+
+function hoverUnfocus() {
+  if (!cy || viewMode === 'ego' || quickFilterStr) return;
+  cy.elements().removeClass('hl');
+  applyViewMode();
+  if (quickFilterStr) quickFilter(quickFilterStr);
 }
 
 function setEgoCenter(name) {
@@ -719,6 +794,7 @@ function applyGraphFilter() {
   const tag  = document.getElementById('f-tag').value.trim().toLowerCase();
 
   cy.nodes().show();
+  applyDensity();   // keep stub/leaf/min-degree hiding under the type/cat/tag filter
   cy.nodes().forEach(n => {
     const d = n.data();
     const show =
