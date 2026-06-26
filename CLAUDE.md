@@ -9,8 +9,8 @@ traps. Deeper detail is in [`docs/`](./docs).
 
 ## What this project is
 
-A single-user **GraphRAG** for **persistent personal memory**, adapted from the
-Kosh GraphRAG PoC. Same engine — **LightRAG** (hybrid vector + graph retrieval)
+A single-user **GraphRAG** for **persistent personal memory**, adapted from an
+earlier MSP GraphRAG PoC I built. Same engine — **LightRAG** (hybrid vector + graph retrieval)
 with **Ollama** serving embeddings locally, reached from Claude.ai through a
 **FastMCP** server over an **ngrok** tunnel — but the schema models *Devon's life*
 (people, projects, ideas, tools, tasks, notes, preferences), not an MSP's clients.
@@ -38,7 +38,7 @@ explicitly optional + review-first.
 - **Graph is derived + disposable.** `python rebuild.py` replays the journal and
   rebuilds `graph/` losslessly (verified: auto-stubbed endpoints survive, forgotten
   entities are dropped). Switch embedding backends? Wipe `graph/`, rebuild.
-- **No approval gate** (unlike Kosh). Devon asked for Claude to write directly, so
+- **No approval gate** (unlike the MSP PoC). Devon asked for Claude to write directly, so
   there's no staging/approve step — the journal is the audit trail instead.
 
 ---
@@ -138,10 +138,10 @@ quality) or `hash` (no service). Other env knobs in `config.py`
 ## Critical gotchas
 
 1. **Mount at `path="/"`.** Claude.ai POSTs to the root; FastMCP defaults to `/mcp`
-   → Claude.ai 404s then shows a misleading OAuth error. (Kosh gotcha #1.)
+   → Claude.ai 404s then shows a misleading OAuth error. (Carried over from the MSP PoC.)
 2. **Restart `mcp_server.py` after a `rebuild.py`** (and re-toggle the connector
    after any tool change) — the running server holds an in-memory graph, and the
-   connector caches the tool manifest. (Kosh gotcha #3.)
+   connector caches the tool manifest. (Carried over from the MSP PoC.)
 3. **One embedding backend per graph.** Vectors from `ollama` and `hash` aren't
    comparable. If you change `PMEM_EMBED_BACKEND`, wipe `graph/` and `rebuild.py`.
 4. **`ainsert_custom_kg` MERGES.** Re-inserting an existing entity merges it (that's
@@ -171,7 +171,7 @@ quality) or `hash` (no service). Other env knobs in `config.py`
   fallback proven for the full pipeline.
 - **Not yet done (PoC posture):** no auth on the tunnel (single host/user); the
   optional local-LLM paths are untested in this environment (no Ollama here) but
-  mirror Kosh's working calls; embedding-backend migrations are manual (`rebuild.py`).
+  mirror the MSP PoC's working calls; embedding-backend migrations are manual (`rebuild.py`).
 
 When you change behavior, **update this file and the relevant `docs/`** so the next
 session starts from the truth.

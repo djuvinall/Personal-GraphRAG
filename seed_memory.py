@@ -36,20 +36,20 @@ SEEDS = [
     ),
     dict(
         context="Personal GraphRAG is Devon's self-hosted memory graph, adapted from "
-                "the Kosh GraphRAG PoC and optimized for personal use.",
+                "an earlier MSP GraphRAG PoC and optimized for personal use.",
         entities=[
             {"name": "Personal GraphRAG", "type": "project", "category": "homelab",
              "tags": ["memory", "graphrag", "active"],
              "description": "Self-hosted personal knowledge graph for persistent memory. "
                             "Claude writes entities + relationships directly; local model optional."},
-            {"name": "Kosh GraphRAG", "type": "project", "category": "homelab",
+            {"name": "MSP GraphRAG PoC", "type": "project", "category": "homelab",
              "tags": ["graphrag", "msp", "source"],
              "description": "The MSP GraphRAG PoC this personal version was forked from."},
         ],
         relationships=[
             {"source": "Devon", "target": "Personal GraphRAG", "relation": "works_on"},
-            {"source": "Personal GraphRAG", "target": "Kosh GraphRAG", "relation": "inspired_by",
-             "description": "Adapted the spine/custom-KG approach from Kosh."},
+            {"source": "Personal GraphRAG", "target": "MSP GraphRAG PoC", "relation": "inspired_by",
+             "description": "Adapted the spine/custom-KG approach from that PoC."},
         ],
     ),
     dict(

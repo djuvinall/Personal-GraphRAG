@@ -73,7 +73,7 @@ You should see the 10 tools. Ask Claude to "remember that I'm using Godot for my
 game" and then "what am I building?" — it should call `remember` then
 `search_memory`.
 
-### Connection gotchas (inherited from Kosh)
+### Connection gotchas (inherited from the MSP PoC)
 
 - **Root path.** The server mounts at `/` on purpose. FastMCP's default `/mcp`
   makes Claude.ai 404 and then show a misleading OAuth/sign-in error. Don't change it.

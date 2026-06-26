@@ -1,7 +1,7 @@
 """
 lightrag_setup.py — the LightRAG instance for personal memory.
 
-Two deliberate departures from the Kosh setup, both serving "personal + local-first":
+Two deliberate departures from the MSP PoC setup, both serving "personal + local-first":
 
   1. PLUGGABLE EMBEDDINGS. `PMEM_EMBED_BACKEND` selects:
        - "ollama" (default): nomic-embed-text, 768-dim — best retrieval quality.
@@ -33,7 +33,7 @@ from schema import ENTITY_TYPES
 
 # Personal entity vocabulary handed to LightRAG for the OPTIONAL local-extraction
 # path (extract_local.py). The deterministic write path sets types in code and
-# ignores this, exactly like the Kosh spine.
+# ignores this, exactly like the MSP PoC's spine.
 ENTITY_TYPE_LIST = list(ENTITY_TYPES.keys())
 
 
@@ -75,7 +75,7 @@ async def _hash_embed(texts: list) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
-# Backend 2 — Ollama nomic-embed-text (identical to the Kosh stack).
+# Backend 2 — Ollama nomic-embed-text (identical to the MSP PoC's stack).
 # ---------------------------------------------------------------------------
 async def _ollama_embed(texts: list) -> np.ndarray:
     async with aiohttp.ClientSession() as session:

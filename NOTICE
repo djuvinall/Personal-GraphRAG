@@ -1,0 +1,21 @@
+Personal GraphRAG
+Copyright 2026 Devon Juvinall
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this software except in compliance with the License. A copy of the License is
+provided in the LICENSE file and is available at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+This software builds on third-party open-source packages, each distributed under
+its own license, including:
+
+  - LightRAG (lightrag-hku) — hybrid vector + graph retrieval engine
+  - FastMCP — MCP server framework
+  - aiohttp — async HTTP client
+  - NumPy — numerical arrays
+
+Optional, run as external services and not bundled with this software:
+
+  - Ollama — local model serving (embeddings; optional generation)
+  - ngrok — HTTPS tunnel for exposing the local MCP server to Claude.ai

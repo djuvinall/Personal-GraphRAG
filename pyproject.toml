@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "personal-graphrag"
+version = "0.1.0"
+description = "A self-hosted knowledge graph for persistent personal memory, written to and read by Claude over MCP. Claude is the relationship model; the local model is optional."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [{ name = "Devon Juvinall" }]
+keywords = ["graphrag", "knowledge-graph", "memory", "mcp", "lightrag", "rag", "llm", "self-hosted", "claude", "ollama"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Database :: Database Engines/Servers",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "lightrag-hku>=1.0.0",
+    "fastmcp>=2.0.0",
+    "aiohttp>=3.9.0",
+    "numpy>=1.26.0",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.5"]
+
+[project.urls]
+Homepage = "https://github.com/djuvinall/Personal-GraphRAG"
+Repository = "https://github.com/djuvinall/Personal-GraphRAG"
+Issues = "https://github.com/djuvinall/Personal-GraphRAG/issues"
+
+[tool.setuptools]
+py-modules = [
+    "config", "schema", "journal", "memory_store", "memory_api",
+    "lightrag_setup", "mcp_server", "rebuild", "recall", "add_memory",
+    "seed_memory", "memory_health", "extract_local",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# Lenient on purpose: catch real bugs (syntax errors, undefined names, broken
+# comparisons), not the formatting/style the author chose deliberately.
+select = ["E9", "F63", "F7", "F82"]

@@ -12,5 +12,5 @@ fastmcp>=2.0.0           # MCP server exposing memory tools to Claude.ai
 aiohttp>=3.9.0           # async HTTP to Ollama
 numpy>=1.26.0            # embedding arrays + the hash fallback embedder
 
-# No DuckDB / instructor here (unlike Kosh): the source of truth is an append-only
+# No DuckDB / instructor here (unlike the MSP PoC): the source of truth is an append-only
 # JSONL journal, not a staging database — simpler and git-friendly for personal use.

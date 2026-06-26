@@ -1,8 +1,8 @@
 """
 config.py — paths + embedding config for Personal GraphRAG.
 
-This is the *personal-memory* sibling of the Kosh GraphRAG PoC. Where Kosh models
-an MSP's companies/tickets/devices, this models ONE person's life: people,
+This is the *personal-memory* sibling of an MSP GraphRAG PoC I built. Where that PoC
+models an MSP's companies/tickets/devices, this models ONE person's life: people,
 projects, ideas, tools, tasks, notes, preferences. Single user, single host,
 frictionless writes (Claude writes directly), append-only journal for safety.
 
@@ -37,12 +37,12 @@ EMBED_DIM        = int(os.environ.get("PMEM_EMBED_DIM", "768"))
 EMBED_MAX_TOKENS = 8192
 
 # Ollama (only used when EMBED_BACKEND="ollama" or for the optional `recall`
-# local-LLM synthesis path). Models match the Kosh stack so one Ollama install
+# local-LLM synthesis path). Models match the MSP PoC's stack so one Ollama install
 # serves both projects.
 OLLAMA_HOST = os.environ.get("PMEM_OLLAMA_HOST", "http://localhost:11434")
 EMBED_MODEL = os.environ.get("PMEM_EMBED_MODEL", "nomic-embed-text")
 LLM_MODEL   = os.environ.get("PMEM_LLM_MODEL",   "qwen2.5:3b")
 
-# Create the dirs we own on import (mirrors Kosh's config.py convenience).
+# Create the dirs we own on import (mirrors the MSP PoC's config.py convenience).
 for _d in (DATA_DIR, GRAPH_DIR):
     _d.mkdir(parents=True, exist_ok=True)

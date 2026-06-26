@@ -97,6 +97,6 @@ the authoritative copy `rebuild.py` reads.
 - **Names are identity.** An entity is keyed by its `name` (case-insensitively).
   Re-using a name merges; vary it and you get two nodes. Keep names canonical.
 - **Closed types, open everything else.** Types are the one place we're strict,
-  because mistyped nodes are what made the Kosh LLM graph hard to use.
+  because mistyped nodes are what made the MSP PoC's LLM graph hard to use.
 - **Edit by re-stating.** There's no `update` verb — `remember` the entity again
   with new details and it merges (tags union, newest description/type win).

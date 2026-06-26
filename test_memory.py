@@ -6,7 +6,7 @@ written to your memory. Run after editing schema.py / memory_store.py / journal.
 
     python test_memory.py
 
-Mirrors the spirit of Kosh's test_pipeline.py: prove the parts that must be
+Mirrors the spirit of the MSP PoC's test_pipeline.py: prove the parts that must be
 correct *without* needing the heavy runtime up.
 """
 import tempfile

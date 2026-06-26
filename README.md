@@ -1,10 +1,15 @@
 # Personal GraphRAG
 
-A self-hosted **knowledge graph for your own persistent memory**. It's the
-personal-life sibling of the Kosh GraphRAG PoC: same engine (LightRAG + Ollama,
-reached from Claude.ai over an MCP tunnel), but re-pointed from "an MSP's
-companies/tickets/devices" to **you** — your people, projects, ideas, tools,
-tasks, notes, and preferences.
+[![CI](https://github.com/djuvinall/Personal-GraphRAG/actions/workflows/ci.yml/badge.svg)](https://github.com/djuvinall/Personal-GraphRAG/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+
+**A knowledge graph for your own memory that Claude writes to and reads from directly — no second extraction model, and the local stack is optional.**
+
+It's the personal-life version of an MSP GraphRAG proof of concept I built earlier:
+same engine (LightRAG + Ollama, reached from Claude.ai over an MCP tunnel), but
+re-pointed from "an MSP's companies/tickets/devices" to **you** — your people,
+projects, ideas, tools, tasks, notes, and preferences.
 
 The whole thing is built around one idea:
 
@@ -18,32 +23,24 @@ The whole thing is built around one idea:
 ## Why this design
 
 Extraction is the hard part of GraphRAG, and it's exactly what a strong model is
-good at. So we let the strong model (Claude, already in the loop) do it, and keep
-the local stack for the boring, cheap parts: embedding and storing. The Kosh PoC
-learned the hard way that a weak 3B model won't honor an entity-type vocabulary
-and produces generic, mistyped nodes (see Kosh `docs/DATA_QUALITY.md`). Here that
-problem can't happen on the main path: **types and edges are set in code from
-Claude's structured input, never guessed by a small model.**
+good at. So I let the strong model (Claude, already in the loop) do it, and keep
+the local stack for the boring, cheap parts: embedding and storing. The earlier
+MSP PoC learned the hard way that a weak 3B model won't honor an entity-type
+vocabulary and produces generic, mistyped nodes. Here that problem can't happen on
+the main path: **types and edges are set in code from Claude's structured input,
+never guessed by a small model.**
 
-## Pipeline at a glance
+## Architecture
 
-```
-   You talk to Claude
-        │
-        ▼
-  remember(entities, relationships)         ← Claude supplies the structure
-        │                                      (no extraction model)
-        ├─► journal.py   ── append-only JSONL  (data/memory_journal.jsonl)  ← SOURCE OF TRUTH
-        │
-        └─► memory_store.build_fragment ─► LightRAG ainsert_custom_kg ─► graph/  (derived index)
-                                              (embeddings only — Ollama or hash)
-
-   search_memory(query)  ──► vector search over entities/relationships/notes  (NO LLM)
-                                              │
-                                              ▼
-                              Claude reads the raw context and answers
-
-   rebuild.py  ──► replay the journal ──► rebuild graph/ from scratch  (lossless, regenerable)
+```mermaid
+flowchart TD
+    U["You talk to Claude"] -->|"remember(entities, relationships)"| R{{"remember<br/>(Claude supplies the structure)"}}
+    R -->|"1 — append first"| J[("memory_journal.jsonl<br/>SOURCE OF TRUTH")]
+    R -->|"2 — then index"| G[("LightRAG graph<br/>derived index")]
+    J -.->|"rebuild.py replays (lossless)"| G
+    Q["You ask a question"] -->|"search_memory — NO LLM"| G
+    G -->|"raw entities / edges / notes"| C["Claude synthesizes the answer"]
+    EMB["Embeddings: Ollama nomic-embed-text<br/>or zero-dep hash fallback"] --- G
 ```
 
 Two durability guarantees make this safe to trust for years:
@@ -85,6 +82,47 @@ python seed_memory.py && python recall.py "my homelab projects"
 quality default any time with `nomic-embed-text` pulled in Ollama, then
 `python rebuild.py`.
 
+## Results
+
+Real output from the seed graph on the zero-dependency `hash` backend (no Ollama),
+so it reproduces anywhere:
+
+```console
+$ PMEM_EMBED_BACKEND=hash python seed_memory.py
+$ python memory_health.py
+  current-state (replayed): 10 entities, 10 relationships
+  types: tool=4, project=2, concept=2, person=1, preference=1
+  UNKNOWN-typed: 0  [OK]
+  isolated nodes: 0  [OK]
+```
+
+The graph is connected and correctly typed — **0 UNKNOWN types, 0 isolated
+nodes** — with `Personal GraphRAG` as the natural hub (degree 8):
+
+```console
+$ python recall.py "Personal GraphRAG"          # get_relationships view
+Personal GraphRAG -[uses]->        LightRAG
+Personal GraphRAG -[uses]->        Ollama
+Personal GraphRAG -[uses]->        FastMCP
+Personal GraphRAG -[uses]->        ngrok
+Personal GraphRAG -[part_of]->     GraphRAG
+Personal GraphRAG -[uses]->        Model Context Protocol
+Personal GraphRAG -[inspired_by]-> MSP GraphRAG PoC
+Devon            -[works_on]->     Personal GraphRAG
+```
+
+No-LLM semantic search returns ranked raw context for Claude to reason over:
+
+```console
+$ PMEM_EMBED_BACKEND=hash python recall.py "local model tooling"
+ENTITIES:
+  [0.26] Model Context Protocol
+  [0.25] Ollama
+```
+
+The full write → index → search → forget → journal-rebuild loop is exercised
+end-to-end in `test_integration.py`, which runs on this same `hash` backend.
+
 ## The tools Claude gets (10)
 
 **Write (Claude-driven, deterministic):** `remember` · `link` · `forget`
@@ -108,10 +146,15 @@ tags and relations are open. Full reference: [`docs/SCHEMA.md`](docs/SCHEMA.md).
 
 ## Connecting to Claude.ai
 
-Identical to the Kosh setup: run `mcp_server.py`, tunnel `localhost:8000` with
-ngrok, and add the **bare HTTPS URL** as a custom connector (path `/`, OAuth
-blank). The root-path mount and manifest-cache gotchas from Kosh apply here too —
-see [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+Run `mcp_server.py`, tunnel `localhost:8000` with ngrok, and add the **bare HTTPS
+URL** as a custom connector (path `/`, OAuth blank). The root-path mount and
+manifest-cache gotchas are documented in [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+
+## How it works (the why)
+
+For the reasoning behind the big decisions — why Claude does the extraction, why
+the journal is the source of truth, why the read path has no LLM, and what the
+trade-offs are — see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Project layout
 
@@ -130,19 +173,27 @@ see [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 | `extract_local.py` | **Optional** local-model extraction from raw text. |
 | `test_memory.py` / `test_integration.py` | Offline pure tests / end-to-end (hash backend). |
 
-## Status
+## Status & roadmap
 
 Built and verified end-to-end with the `hash` backend (no Ollama): structured
 writes, no-LLM retrieval, graph primitives, forget, and a **lossless
 journal→graph rebuild** all pass (`python test_memory.py && python
-test_integration.py`). Type integrity is clean (0 UNKNOWN nodes, 0 isolated
-nodes on the seed graph). The optional `recall`/`extract_local` paths need a
-running Ollama and mirror the proven Kosh call patterns.
+test_integration.py`). Type integrity is clean (0 UNKNOWN nodes, 0 isolated nodes
+on the seed graph). The optional `recall`/`extract_local` paths need a running
+Ollama.
 
-See [`CLAUDE.md`](CLAUDE.md) for the working guide and gotchas.
+Next, roughly in priority order:
+
+- **Auth on the tunnel.** Today it's a single-host/single-user PoC with no auth on
+  the ngrok tunnel — fine for one machine, required before any wider exposure.
+- **A stable hostname** instead of an ephemeral ngrok URL.
+- **Embedding-backend migration helper** (currently a manual `rebuild.py`).
+- **Optional richer retrieval tuning** for the `recall` synthesis path.
 
 ## License
 
-Apache License 2.0 — see [`LICENSE`](LICENSE). Built on
+Apache License 2.0 — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). Built on
 [LightRAG](https://github.com/HKUDS/LightRAG) and adapted from a private MSP
 GraphRAG proof of concept.
+
+See [`CLAUDE.md`](CLAUDE.md) for the working guide and gotchas.

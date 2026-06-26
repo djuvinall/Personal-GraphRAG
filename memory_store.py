@@ -16,7 +16,7 @@ Responsibilities (all pure — no lightrag/ollama imports, so it's unit-testable
   * build_custom_kg + check_integrity   the rebuild + safety net
 
 The LightRAG `custom_kg` shape (entities / relationships / chunks) and field names
-mirror the proven Kosh build_kg.py exactly, so `rag.ainsert_custom_kg(...)` accepts
+mirror the proven build_kg.py from the MSP PoC exactly, so `rag.ainsert_custom_kg(...)` accepts
 it unchanged. The only LLM-free write path — types are set in code, never guessed.
 """
 from __future__ import annotations

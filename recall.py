@@ -11,7 +11,6 @@ to have the local Ollama model synthesize a prose answer.
 """
 import argparse
 import asyncio
-import json
 import sys
 
 import memory_api as api
