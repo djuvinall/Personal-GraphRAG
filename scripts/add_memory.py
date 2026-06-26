@@ -20,6 +20,9 @@ import asyncio
 import json
 import sys
 
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "core"))
+
 import memory_api as api
 
 if sys.platform == "win32":

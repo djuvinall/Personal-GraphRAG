@@ -94,29 +94,68 @@ returned entities/relationships/notes, and answer in your own words. Use
 
 ---
 
+## Repository layout
+
+```
+personal-graphrag/
+├── core/          # shared library — all servers/scripts/tests import from here
+│   ├── config.py          paths, env knobs, embedding backend config
+│   ├── schema.py          ENTITY_TYPES / CATEGORIES / RELATIONS taxonomy
+│   ├── journal.py         append-only JSONL journal (the source of truth)
+│   ├── memory_store.py    normalize → build_fragment → replay/rebuild
+│   ├── memory_api.py      async operations: remember/link/forget/search/browse/…
+│   └── lightrag_setup.py  LightRAG instance; embed_func (ollama/hash); llm_func
+├── servers/       # runnable server processes
+│   ├── mcp_server.py      FastMCP server for Claude.ai (port 8000, path "/")
+│   ├── dashboard.py       FastAPI web UI (port 5000)
+│   └── dashboard.html     SPA frontend served by dashboard.py
+├── scripts/       # CLI tools (run from repo root or their own dir)
+│   ├── add_memory.py      add a single memory or JSON payload from the CLI
+│   ├── rebuild.py         rebuild graph/ from the journal (lossless)
+│   ├── recall.py          no-LLM retrieval / optional local-model synthesis
+│   ├── seed_memory.py     plant starter memories into a fresh graph
+│   ├── memory_health.py   offline health check (journal + GraphML)
+│   └── extract_local.py   OPTIONAL: local-model extraction (review-only)
+├── tests/
+│   ├── test_memory.py     offline pure-logic tests (no Ollama/LightRAG)
+│   └── test_integration.py end-to-end on the hash backend (no Ollama)
+└── docs/          deeper documentation
+```
+
+**Import path:** every file outside `core/` inserts `core/` into `sys.path` at
+startup, so all `import journal`, `import memory_api`, etc. resolve unchanged.
+
 ## Commands
 
 Run from the repo root (venv active). Ollama only needed for the quality embedding
 backend and the optional LLM paths.
 
 ```bash
-python seed_memory.py                  # starter memories -> journal + graph
-python add_memory.py --name "Blender" --type tool --category gamedev --desc "..."
-python add_memory.py --json '{"entities":[...],"relationships":[...]}'
-python recall.py "what am I building?"          # no-LLM retrieval, pretty-printed
-python recall.py "summarize my homelab" --llm   # local-model synthesis (needs Ollama)
-python memory_health.py                # offline health: journal + graph, UNKNOWN%, isolated
-python rebuild.py [--dry-run]          # rebuild graph/ from the journal (lossless)
-python mcp_server.py                   # serve MCP on 0.0.0.0:8000 path "/"
-python extract_local.py --file notes.md         # OPTIONAL local extraction (review-only)
+# ── Servers ────────────────────────────────────────────────────────────────────
+python servers/mcp_server.py           # MCP server on 0.0.0.0:8000, path "/"
+$env:WEB_UI_PASSWORD="..." ; python servers/dashboard.py   # web UI on port 5000
 
-python test_memory.py                  # offline pure tests (schema/store/journal/replay)
-python test_integration.py             # end-to-end on the hash backend (no Ollama)
+# ── Scripts ────────────────────────────────────────────────────────────────────
+python scripts/seed_memory.py                          # starter memories -> journal + graph
+python scripts/add_memory.py --name "Blender" --type tool --category gamedev --desc "..."
+python scripts/add_memory.py --json '{"entities":[...],"relationships":[...]}'
+python scripts/recall.py "what am I building?"         # no-LLM retrieval, pretty-printed
+python scripts/recall.py "summarize my homelab" --llm  # local-model synthesis (needs Ollama)
+python scripts/memory_health.py        # offline health: journal + graph, UNKNOWN%, isolated
+python scripts/rebuild.py [--dry-run]  # rebuild graph/ from the journal (lossless)
+python scripts/extract_local.py --file notes.md        # OPTIONAL local extraction (review-only)
+
+# ── Tests ──────────────────────────────────────────────────────────────────────
+python tests/test_memory.py            # offline pure tests (schema/store/journal/replay)
+python tests/test_integration.py       # end-to-end on the hash backend (no Ollama)
 ```
 
 Backend switch (per graph — pick one): `PMEM_EMBED_BACKEND=ollama` (default,
-quality) or `hash` (no service). Other env knobs in `config.py`
+quality) or `hash` (no service). Other env knobs in `core/config.py`
 (`PMEM_DATA_DIR`, `PMEM_GRAPH_DIR`, `PMEM_OLLAMA_HOST`, `PMEM_LLM_MODEL`, …).
+
+Dashboard env vars: `WEB_UI_PASSWORD` (required), `WEB_UI_SECRET` (session key),
+`WEB_UI_PORT` (default 5000).
 
 ---
 
@@ -124,14 +163,17 @@ quality) or `hash` (no service). Other env knobs in `config.py`
 
 | File | Role |
 |---|---|
-| `schema.py` | Taxonomy + normalization (`ENTITY_TYPES`, `CATEGORIES`, `RELATIONS`). Pure, testable. |
-| `journal.py` | Append-only JSONL journal — the source of truth. Pure. |
-| `memory_store.py` | `normalize_memory` → `build_fragment` (custom_kg) → `replay`/`build_custom_kg`/`check_integrity`. Pure. |
-| `memory_api.py` | The async operations behind every tool/CLI. The `remember` write path lives here. |
-| `lightrag_setup.py` | LightRAG instance; `embed_func` switches ollama/hash; optional `llm_func`. |
-| `mcp_server.py` | FastMCP; thin wrappers over `memory_api`; mounted at `/`. |
-| `rebuild.py` `seed_memory.py` `add_memory.py` `recall.py` `memory_health.py` `extract_local.py` | CLIs. |
-| `test_memory.py` `test_integration.py` | Offline + end-to-end tests. |
+| `core/schema.py` | Taxonomy + normalization (`ENTITY_TYPES`, `CATEGORIES`, `RELATIONS`). Pure, testable. |
+| `core/journal.py` | Append-only JSONL journal — the source of truth. Pure. |
+| `core/memory_store.py` | `normalize_memory` → `build_fragment` (custom_kg) → `replay`/`build_custom_kg`/`check_integrity`. Pure. Handles `forget_relationship` tombstones. |
+| `core/memory_api.py` | Async operations behind every tool/CLI: `remember`, `link`, `forget`, `forget_relationship`, `search_memory`, `browse`, `get_entity`, `get_relationships`, `memory_stats`, `recall`. |
+| `core/lightrag_setup.py` | LightRAG instance; `embed_func` switches ollama/hash; optional `llm_func`. |
+| `servers/mcp_server.py` | FastMCP; thin wrappers over `memory_api`; mounted at `/`. |
+| `servers/dashboard.py` | FastAPI web UI: session auth, REST CRUD, WebSocket delta push, journal watcher. |
+| `servers/dashboard.html` | SPA: Cytoscape.js graph, Tabulator tables, detail panel, semantic search. |
+| `scripts/rebuild.py` | Replays journal → wipes `graph/` → re-indexes (lossless). |
+| `scripts/seed_memory.py` | Starter memories for a fresh graph. |
+| `tests/test_memory.py` `tests/test_integration.py` | Offline + end-to-end tests. |
 
 ---
 
@@ -143,7 +185,7 @@ quality) or `hash` (no service). Other env knobs in `config.py`
    after any tool change) — the running server holds an in-memory graph, and the
    connector caches the tool manifest. (Carried over from the MSP PoC.)
 3. **One embedding backend per graph.** Vectors from `ollama` and `hash` aren't
-   comparable. If you change `PMEM_EMBED_BACKEND`, wipe `graph/` and `rebuild.py`.
+   comparable. If you change `PMEM_EMBED_BACKEND`, wipe `graph/` and run `scripts/rebuild.py`.
 4. **`ainsert_custom_kg` MERGES.** Re-inserting an existing entity merges it (that's
    how updates work). For a clean rebuild, `rebuild.py` wipes `graph/` first.
 5. **Don't re-stub an existing node.** A relationship to an already-typed node must

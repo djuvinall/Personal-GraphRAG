@@ -21,6 +21,10 @@ os.environ["PMEM_EMBED_BACKEND"] = "hash"
 os.environ["PMEM_DATA_DIR"] = os.path.join(_tmp, "data")
 os.environ["PMEM_GRAPH_DIR"] = os.path.join(_tmp, "graph")
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "core"))
+
 import memory_api as api          # noqa: E402
 import journal                    # noqa: E402
 

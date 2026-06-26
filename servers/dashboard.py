@@ -32,8 +32,8 @@ import sys
 from pathlib import Path
 from typing import Any, Set
 
-# ── make sibling modules importable ──────────────────────────────────────────
-sys.path.insert(0, str(Path(__file__).parent))
+# ── add core/ to path so shared modules are importable ───────────────────────
+sys.path.insert(0, str(Path(__file__).parent.parent / "core"))
 
 import journal as jrn
 import memory_api as api

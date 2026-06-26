@@ -12,6 +12,9 @@ correct *without* needing the heavy runtime up.
 import tempfile
 from pathlib import Path
 
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent / "core"))
+
 import schema
 import memory_store as ms
 import journal

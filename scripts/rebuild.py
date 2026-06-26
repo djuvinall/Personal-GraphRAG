@@ -18,6 +18,9 @@ import asyncio
 import shutil
 import sys
 
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "core"))
+
 import journal
 import memory_store as ms
 from config import GRAPH_DIR

@@ -14,6 +14,9 @@ import sys
 import xml.etree.ElementTree as ET
 from collections import Counter
 
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "core"))
+
 import journal
 import memory_store as ms
 from config import GRAPH_DIR
