@@ -97,10 +97,11 @@ $ python memory_health.py
 ```
 
 The graph is connected and correctly typed — **0 UNKNOWN types, 0 isolated
-nodes** — with `Personal GraphRAG` as the natural hub (degree 8):
+nodes** — with `Personal GraphRAG` as the natural hub (degree 8). The
+`get_relationships` tool returns its neighborhood:
 
-```console
-$ python recall.py "Personal GraphRAG"          # get_relationships view
+```text
+get_relationships("Personal GraphRAG")  ->  8 edges
 Personal GraphRAG -[uses]->        LightRAG
 Personal GraphRAG -[uses]->        Ollama
 Personal GraphRAG -[uses]->        FastMCP
