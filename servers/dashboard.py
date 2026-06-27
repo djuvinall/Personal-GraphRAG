@@ -345,6 +345,34 @@ async def api_link(request: Request):
     )
 
 
+@app.post("/api/rename")
+async def api_rename(request: Request):
+    _guard(request)
+    body = await request.json()
+    old_name = body.get("old_name", "").strip()
+    new_name = body.get("new_name", "").strip()
+    if not old_name or not new_name:
+        raise HTTPException(status_code=400, detail="old_name and new_name required")
+    result = await api.rename(old_name, new_name)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "rename failed"))
+    return result
+
+
+@app.post("/api/merge")
+async def api_merge(request: Request):
+    _guard(request)
+    body = await request.json()
+    source = body.get("source", "").strip()
+    target = body.get("target", "").strip()
+    if not source or not target:
+        raise HTTPException(status_code=400, detail="source and target required")
+    result = await api.merge(source, target)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "merge failed"))
+    return result
+
+
 @app.post("/api/forget_relationship")
 async def api_forget_relationship(request: Request):
     _guard(request)

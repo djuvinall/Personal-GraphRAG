@@ -62,8 +62,10 @@
     /* ── Detail panel ───────────────────────────────────── */
     #detail { width: 300px; flex-shrink: 0; background: var(--bg-panel); border-left: 1px solid var(--border); display: none; flex-direction: column; overflow: hidden; }
     #detail.open { display: flex; }
-    #detail-header { padding: .75rem 1rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-    #detail-header h6 { margin: 0; font-weight: 700; font-size: .95rem; word-break: break-word; }
+    #detail-header { padding: .75rem 1rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: .4rem; flex-shrink: 0; }
+    #detail-name { margin: 0; font-weight: 700; font-size: .95rem; word-break: break-word; flex: 1; cursor: pointer; padding: .15rem .3rem; border-radius: 4px; border: 1px solid transparent; transition: border-color .15s, background .15s; }
+    #detail-name:hover { border-color: var(--border); background: var(--bg-hover); }
+    #detail-name.renaming { border-color: var(--accent); background: var(--bg-app); cursor: text; }
     #detail-body { flex: 1; overflow-y: auto; padding: .75rem 1rem; }
     .d-field { margin-bottom: .85rem; }
     .d-label { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-bottom: .2rem; }
@@ -286,7 +288,10 @@
       <!-- Detail panel -->
       <div id="detail">
         <div id="detail-header">
-          <h6 id="detail-name">Entity</h6>
+          <h6 id="detail-name" title="Click to rename" onclick="startRename()">Entity</h6>
+          <button class="btn btn-sm btn-outline-secondary" onclick="showMergeModal()" title="Merge into another entity">
+            <i class="bi bi-diagram-2"></i>
+          </button>
           <button class="btn btn-sm btn-outline-secondary" onclick="closeDetail()">
             <i class="bi bi-x"></i>
           </button>
@@ -309,7 +314,12 @@
             <div class="d-value" id="dv-description" onclick="startEdit('description')" style="white-space:pre-wrap"></div>
           </div>
           <div id="detail-rels">
-            <div class="d-label mb-2">Relationships</div>
+            <div class="d-label mb-2" style="display:flex;align-items:center;justify-content:space-between">
+              <span>Relationships</span>
+              <button class="btn btn-xs btn-outline-secondary" onclick="showAddRelFromDetail()" title="Add relationship from this entity">
+                <i class="bi bi-plus"></i>
+              </button>
+            </div>
             <div id="detail-rels-list"></div>
           </div>
         </div>
@@ -399,6 +409,40 @@
       <div class="modal-footer" style="border-color:var(--border)">
         <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button class="btn btn-success" onclick="saveNewRel()">Add Relationship</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Merge Entity Modal ─────────────────────────── -->
+<div class="modal fade" id="mergeModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--bg-panel);border-color:var(--border)">
+      <div class="modal-header" style="border-color:var(--border)">
+        <h5 class="modal-title">Merge Entity</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-3">The source entity's relationships will be re-pointed to the target, then the source will be deleted.</p>
+        <div class="d-flex align-items-end gap-2">
+          <div class="flex-fill">
+            <label class="form-label small">Source <span class="text-muted">(deleted)</span></label>
+            <input id="mg-source" type="text" class="form-control" list="entity-datalist" placeholder="Entity to absorb">
+          </div>
+          <div class="pb-1">
+            <button class="btn btn-outline-secondary btn-sm" onclick="swapMerge()" title="Swap source and target">
+              <i class="bi bi-arrow-left-right"></i>
+            </button>
+          </div>
+          <div class="flex-fill">
+            <label class="form-label small">Target <span class="text-muted">(survives)</span></label>
+            <input id="mg-target" type="text" class="form-control" list="entity-datalist" placeholder="Entity to keep">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="border-color:var(--border)">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger" onclick="executeMerge()"><i class="bi bi-diagram-2"></i> Merge</button>
       </div>
     </div>
   </div>
@@ -1097,6 +1141,10 @@ function startEdit(field) {
     input.value = current;
   }
   input.onchange = input.oninput = () => { detailEdits[field] = input.value; };
+  // Prevent clicks on the input/select from bubbling to the parent .d-value div,
+  // which would re-fire startEdit() and collapse the dropdown immediately.
+  input.addEventListener('click',     e => e.stopPropagation());
+  input.addEventListener('mousedown', e => e.stopPropagation());
   el.appendChild(input);
   input.focus();
 }
@@ -1190,6 +1238,123 @@ async function saveNewEntity() {
     bootstrap.Modal.getInstance(document.getElementById('addEntityModal')).hide();
     toast(`Added "${name}"`);
   } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── Rename entity ──────────────────────────────────────────────
+function startRename() {
+  if (!detailName) return;
+  const h6 = document.getElementById('detail-name');
+  // Already in rename mode?
+  if (h6.classList.contains('renaming')) return;
+  const current = detailName;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = current;
+  input.style.cssText = 'font-weight:700;font-size:.95rem;width:100%;background:transparent;border:none;outline:none;color:var(--text);padding:0;';
+
+  h6.classList.add('renaming');
+  h6.textContent = '';
+  h6.appendChild(input);
+  input.focus();
+  input.select();
+
+  // Stop the header click from bubbling back to startRename while we're editing
+  input.addEventListener('click',     e => e.stopPropagation());
+  input.addEventListener('mousedown', e => e.stopPropagation());
+
+  let committed = false;
+
+  const cancel = () => {
+    if (committed) return;
+    h6.classList.remove('renaming');
+    h6.textContent = current;
+  };
+
+  input.addEventListener('keydown', async e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      committed = true;
+      const newName = input.value.trim();
+      h6.classList.remove('renaming');
+      await commitRename(current, newName);
+    } else if (e.key === 'Escape') {
+      cancel();
+    }
+  });
+
+  // blur fires after Enter too; the committed flag prevents it from overwriting
+  input.addEventListener('blur', () => setTimeout(cancel, 150));
+}
+
+async function commitRename(oldName, newName) {
+  if (!newName || newName.toLowerCase() === oldName.toLowerCase()) {
+    document.getElementById('detail-name').textContent = oldName;
+    return;
+  }
+  try {
+    await apiFetch('/api/rename', {
+      method: 'POST',
+      body: JSON.stringify({ old_name: oldName, new_name: newName }),
+    });
+    toast(`Renamed "${oldName}" → "${newName}"`);
+    detailName = newName;
+    await loadAll();
+    openDetail(newName);
+  } catch(e) {
+    toast(e.message, 'err');
+    document.getElementById('detail-name').textContent = oldName;
+  }
+}
+
+// ── Merge entity ───────────────────────────────────────────────
+function showMergeModal() {
+  if (!detailName) return;
+  document.getElementById('mg-source').value = detailName;
+  document.getElementById('mg-target').value = '';
+  new bootstrap.Modal(document.getElementById('mergeModal')).show();
+}
+
+function swapMerge() {
+  const src = document.getElementById('mg-source');
+  const tgt = document.getElementById('mg-target');
+  const tmp = src.value;
+  src.value = tgt.value;
+  tgt.value = tmp;
+}
+
+async function executeMerge() {
+  const source = document.getElementById('mg-source').value.trim();
+  const target = document.getElementById('mg-target').value.trim();
+  if (!source || !target) { toast('Both source and target are required', 'err'); return; }
+  if (source.toLowerCase() === target.toLowerCase()) { toast('Source and target must be different', 'err'); return; }
+  if (!confirm(`Merge "${source}" into "${target}"?\n\n"${source}" will be deleted and its relationships re-pointed to "${target}".`)) return;
+
+  try {
+    const res = await apiFetch('/api/merge', {
+      method: 'POST',
+      body: JSON.stringify({ source, target }),
+    });
+    bootstrap.Modal.getInstance(document.getElementById('mergeModal')).hide();
+    toast(`Merged "${source}" into "${target}" (${res.edges_relinked} edges)`);
+    // If the deleted entity was in the detail panel, switch to the survivor
+    if (detailName && detailName.toLowerCase() === source.toLowerCase()) {
+      detailName = res.target;
+    }
+    await loadAll();
+    if (detailName) openDetail(detailName);
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── Quick-add relationship from detail panel ───────────────────
+function showAddRelFromDetail() {
+  if (!detailName) return;
+  const sel = document.getElementById('ar-rel');
+  sel.innerHTML = RELATIONS.map(r => `<option value="${r}">${r}</option>`).join('');
+  document.getElementById('ar-source').value = detailName;
+  document.getElementById('ar-target').value = '';
+  document.getElementById('ar-desc').value = '';
+  new bootstrap.Modal(document.getElementById('addRelModal')).show();
 }
 
 // ── Add relationship ───────────────────────────────────────────

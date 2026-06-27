@@ -164,6 +164,101 @@ async def forget(entity: str) -> dict:
     return {"ok": True, "forgot": entity, "removed_from_graph": removed}
 
 
+async def rename(old_name: str, new_name: str) -> dict:
+    """Rename an entity atomically: remember new entity, relink all edges to new
+    name (journalled first), then forget old name. Order matters — every re-link
+    must be in the journal BEFORE the forget so rebuild.py stays lossless."""
+    records = journal.read_all()
+    ents_by_key, rels = ms.replay(records)
+
+    old_key = old_name.strip().lower()
+    node = ents_by_key.get(old_key)
+    if not node:
+        return {"ok": False, "error": f"Entity '{old_name}' not found"}
+
+    new_name = new_name.strip()
+    if not new_name:
+        return {"ok": False, "error": "new_name must not be empty"}
+    if old_key == new_name.lower():
+        return {"ok": False, "error": "old and new names are the same"}
+
+    # 1. Create the new entity with the same metadata
+    await remember(entities=[{
+        "name": new_name,
+        "type": node["type"],
+        "category": node["category"],
+        "tags": node["tags"],
+        "description": node["description"],
+    }], origin="dashboard")
+
+    # 2. Journal re-links for every edge that touched the old name
+    for rel in rels:
+        src = rel["source"]
+        tgt = rel["target"]
+        changed = False
+        if src.lower() == old_key:
+            src = new_name
+            changed = True
+        if tgt.lower() == old_key:
+            tgt = new_name
+            changed = True
+        if changed:
+            await link(source=src, target=tgt,
+                       relation=rel["relation"],
+                       description=rel.get("description", ""))
+
+    # 3. Forget old entity after all re-links are safely in the journal
+    await forget(old_name)
+
+    return {"ok": True, "old_name": old_name, "new_name": new_name,
+            "edges_relinked": sum(
+                1 for r in rels
+                if r["source"].lower() == old_key or r["target"].lower() == old_key
+            )}
+
+
+async def merge(source: str, target: str) -> dict:
+    """Merge source entity into target: re-point all of source's edges to target,
+    then forget source. Self-loop edges (both endpoints become target) are skipped."""
+    records = journal.read_all()
+    ents_by_key, rels = ms.replay(records)
+
+    src_key = source.strip().lower()
+    tgt_key = target.strip().lower()
+
+    if not ents_by_key.get(src_key):
+        return {"ok": False, "error": f"Source entity '{source}' not found"}
+    if not ents_by_key.get(tgt_key):
+        return {"ok": False, "error": f"Target entity '{target}' not found"}
+    if src_key == tgt_key:
+        return {"ok": False, "error": "Cannot merge an entity into itself"}
+
+    # Use canonical name stored on the target node
+    canonical_target = ents_by_key[tgt_key]["name"]
+
+    relinked = 0
+    for rel in rels:
+        src_ep = rel["source"]
+        tgt_ep = rel["target"]
+        changed = False
+        if src_ep.lower() == src_key:
+            src_ep = canonical_target
+            changed = True
+        if tgt_ep.lower() == src_key:
+            tgt_ep = canonical_target
+            changed = True
+        if changed and src_ep.lower() != tgt_ep.lower():   # skip self-loops
+            await link(source=src_ep, target=tgt_ep,
+                       relation=rel["relation"],
+                       description=rel.get("description", ""))
+            relinked += 1
+
+    await forget(source)
+
+    return {"ok": True, "source": source, "target": canonical_target,
+            "edges_relinked": relinked}
+
+
 async def forget_relationship(source: str, target: str, relation: str) -> dict:
     """Tombstone a specific relationship in the journal.
 

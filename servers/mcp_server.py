@@ -86,6 +86,24 @@ async def forget(entity: str) -> str:
     return _j(await api.forget(entity))
 
 
+@mcp.tool()
+async def rename(old_name: str, new_name: str) -> str:
+    """Rename an entity. Atomically: creates the new entity with the same
+    metadata, re-links all relationships to the new name (journalled first so
+    rebuild.py stays lossless), then forgets the old name.
+    Returns counts of edges relinked."""
+    return _j(await api.rename(old_name, new_name))
+
+
+@mcp.tool()
+async def merge(source: str, target: str) -> str:
+    """Merge source entity into target. All of source's relationships are
+    re-pointed to target (self-loops are dropped), then source is forgotten.
+    target survives with its own name and metadata unchanged.
+    Use this to deduplicate entities (e.g. 'Rewst' → 'Rewst Automation Platform')."""
+    return _j(await api.merge(source, target))
+
+
 # --------------------------- READ (no LLM) ---------------------------------
 
 @mcp.tool()
