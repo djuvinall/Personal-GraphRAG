@@ -853,7 +853,8 @@ function runLayout(onDone) {
       .radius(function(d) { return d.r + 24; })
       .strength(1.0)
       .iterations(5))
-    .force('center', d3.forceCenter(0, 0).strength(0.08))
+    .force('x', d3.forceX(0).strength(0.06))
+    .force('y', d3.forceY(0).strength(0.06))
     .stop();
 
   // Run synchronously (~100ms for 155 nodes × 600 ticks)
