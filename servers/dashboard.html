@@ -699,10 +699,8 @@ function _buildCy(savedPositions) {
   const container = document.getElementById('cy');
   const elements = buildCyElements();
   const layout = Object.keys(savedPositions).length > 0
-    ? { name: 'preset', positions: id => savedPositions[id] || { x: Math.random()*600, y: Math.random()*400 } }
-    : { name: 'cose', idealEdgeLength: 150, nodeOverlap: 30, nodeRepulsion: 9000,
-        componentSpacing: 130, animate: false, gravity: 0.25, numIter: 1500,
-        coolingFactor: 0.99, padding: 50 };
+    ? { name: 'preset', positions: function(id) { return savedPositions[id] || { x: Math.random()*600, y: Math.random()*400 }; } }
+    : weightedLayout({ animate: false });
 
   cy = cytoscape({
     container,
@@ -733,13 +731,38 @@ function onBackgroundTap() {
   if (viewMode !== 'ego') closeDetail();
 }
 
+function weightedLayout(overrides) {
+  // Degree-weighted cose physics inspired by Obsidian Graph View.
+  // Hubs earn central positions naturally: their many edge-pulls balance at
+  // center while leaves float outward. Tuned for ~150 nodes.
+  //
+  //   Devon (deg 73) => repulsion ~459k, edge 130px  (-21% vs previous)
+  //   medium (deg 10) => repulsion ~48k,  edge 242px  (+42% vs previous)
+  //   leaf   (deg  1) => repulsion ~30.5k, edge 258px (+188% vs previous)
+  //
+  // The wide gap between hub and leaf repulsion means hubs carve large personal
+  // space — but gravity (0.40) and 73+ edge-pulls balance them at center.
+  // Raising the hub-edge floor from 60->130px prevents Devon's neighbors from
+  // crowding into a dense ring and causing label overlap.
+  return Object.assign({
+    name: 'cose',
+    numIter: 3000,
+    coolingFactor: 0.99,
+    gravity: 0.40,
+    nodeOverlap: 20,
+    componentSpacing: 180,
+    padding: 80,
+    nodeRepulsion: function(node) { return 30000 + Math.pow(node.degree(), 1.6) * 450; },
+    idealEdgeLength: function(edge) {
+      var maxDeg = Math.max(edge.source().degree(), edge.target().degree());
+      return Math.max(130, 260 - maxDeg * 1.8);
+    },
+  }, overrides || {});
+}
+
 function relayout() {
   if (!cy) return;
-  cy.layout({
-    name: 'cose', idealEdgeLength: 150, nodeOverlap: 30, nodeRepulsion: 9000,
-    componentSpacing: 130, animate: true, animationDuration: 600, gravity: 0.25,
-    numIter: 1500, padding: 50,
-  }).run();
+  cy.layout(weightedLayout({ animate: true, animationDuration: 700 })).run();
 }
 
 function fitGraph() {
@@ -1455,10 +1478,22 @@ function initWebSocket() {
 function applyDelta(msg) {
   if (msg.op === 'forget') {
     // Remove from local data
-    graphData.nodes = graphData.nodes.filter(n => n.id !== msg.entity);
-    graphData.edges = graphData.edges.filter(e => e.source !== msg.entity && e.target !== msg.entity);
-    // Remove from Cytoscape
-    if (cy) cy.getElementById(msg.entity).remove();
+    graphData.nodes = graphData.nodes.filter(function(n) { return n.id !== msg.entity; });
+    graphData.edges = graphData.edges.filter(function(e) { return e.source !== msg.entity && e.target !== msg.entity; });
+    // Remove from Cytoscape, recompute neighbor degrees, then settle the gap
+    if (cy) {
+      cy.getElementById(msg.entity).remove();
+      // Neighbors lost a connection — recompute all degrees and resize nodes
+      var deg = {};
+      graphData.edges.forEach(function(e) { deg[e.source]=(deg[e.source]||0)+1; deg[e.target]=(deg[e.target]||0)+1; });
+      graphData.nodes.forEach(function(n) {
+        n.degree = deg[n.id] || 0;
+        var cn = cy.getElementById(n.id);
+        if (cn.length) { cn.data('degree', n.degree); cn.style({ width: nodeSize(n.degree), height: nodeSize(n.degree) }); }
+      });
+      // Gentle settle: close the hole left by the deleted node without jarring reposition
+      cy.layout(weightedLayout({ animate: true, animationDuration: 600, numIter: 450, coolingFactor: 0.93 })).run();
+    }
     // Close detail if was showing that node
     if (detailName === msg.entity) closeDetail();
 
