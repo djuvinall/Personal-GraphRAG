@@ -56,3 +56,55 @@ queryable at a higher level of abstraction.
 they can be bulk-forgotten on re-run and not accumulate stale summaries.
 
 **Suggested schedule:** weekly, after any significant batch of new memories.
+
+---
+
+## Dashboard: Cascade Drag Repulsion
+
+**File:** `servers/dashboard.html` — `_buildCy()` drag event handler
+
+**Why:** The current live-drag handler only pushes nodes within 280px of the
+*dragged* node. If a pushed node lands on top of a third node, that third node
+doesn't move — the cascade stops at depth 1. The result is that manual
+repositioning can create new overlaps one hop away.
+
+**Design:**
+- After pushing a node during drag, add it to a "dirty" set
+- Run a second pass over only the dirty set's neighbors to check for new overlaps
+- Repeat until no new overlaps are introduced (or a max-depth cap of 3–4)
+- This is essentially a BFS ripple: dragged node → pushed neighbors → their
+  overlapping neighbors → and so on
+- Keep a visited set so nodes aren't double-pushed in the same drag event frame
+
+**Rough implementation:**
+```javascript
+cy.on('drag', 'node', function(e) {
+  var queue = [e.target];
+  var visited = new Set([e.target.id()]);
+  for (var depth = 0; depth < 4 && queue.length; depth++) {
+    var nextQueue = [];
+    queue.forEach(function(source) {
+      var sp = source.position(), sw2 = source.width() / 2;
+      cy.nodes().not(source).forEach(function(n) {
+        if (visited.has(n.id())) return;
+        var np = n.position();
+        if (Math.abs(np.x - sp.x) > 300 || Math.abs(np.y - sp.y) > 300) return;
+        var dx = np.x - sp.x, dy = np.y - sp.y;
+        var dist = Math.sqrt(dx*dx + dy*dy) || 0.001;
+        var minDist = sw2 + n.width() / 2 + 16;
+        if (dist < minDist) {
+          var push = (minDist - dist) * 0.6;
+          n.position({ x: np.x + (dx/dist)*push, y: np.y + (dy/dist)*push });
+          nextQueue.push(n);
+          visited.add(n.id());
+        }
+      });
+    });
+    queue = nextQueue;
+  }
+});
+```
+
+**Performance note:** BFS depth cap is critical — uncapped this becomes O(n²)
+per mousemove frame. Depth 3–4 with the 300px bounding-box cull is safe for
+~200 nodes.

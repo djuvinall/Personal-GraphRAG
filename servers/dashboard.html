@@ -454,6 +454,7 @@
 <!-- ── Scripts ───────────────────────────────────────────────────────────── -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.27.0/cytoscape.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tabulator/6.2.0/js/tabulator.min.js"></script>
 
 <script>
@@ -698,15 +699,20 @@ function renderCytoscape() {
 function _buildCy(savedPositions) {
   const container = document.getElementById('cy');
   const elements = buildCyElements();
-  const layout = Object.keys(savedPositions).length > 0
-    ? { name: 'preset', positions: function(id) { return savedPositions[id] || { x: Math.random()*600, y: Math.random()*400 }; } }
-    : weightedLayout({ animate: false });
+  const hasSaved = Object.keys(savedPositions).length > 0;
 
+  // Construct WITHOUT a layout — we run it explicitly below so we can
+  // chain layoutstop BEFORE it fires (animate:false fires synchronously
+  // inside the constructor, which would miss a cy.one() registered after).
   cy = cytoscape({
     container,
     elements,
     style: cyStyle(),
-    layout,
+    layout: { name: 'preset', positions: function(n) {
+      return hasSaved
+        ? (savedPositions[n.id()] || { x: Math.random()*800, y: Math.random()*600 })
+        : { x: Math.random()*800, y: Math.random()*600 };
+    }},
     wheelSensitivity: 0.3,
   });
 
@@ -716,7 +722,7 @@ function _buildCy(savedPositions) {
   cy.on('mouseover', 'node', e => hoverFocus(e.target));
   cy.on('mouseout',  'node', () => hoverUnfocus());
 
-  // Live drag: push overlapping nodes away as you drag (no relayout on release)
+  // Live drag: push overlapping nodes away (no relayout on release — sticky)
   cy.on('drag', 'node', function(e) {
     var dragged = e.target;
     var pos = dragged.position();
@@ -733,11 +739,13 @@ function _buildCy(savedPositions) {
       }
     });
   });
-  // dragfree: no relayout — manual positions are sticky.
 
-  // After fresh layout (not preset), fix any remaining overlaps
-  if (Object.keys(savedPositions).length === 0) {
-    cy.one('layoutstop', function() { eliminateOverlaps(); });
+  if (hasSaved) {
+    // Re-render after in-session filter change: keep positions, just fix overlaps
+    eliminateOverlaps();
+  } else {
+    // Fresh page load: D3-force layout (same as Re-layout button)
+    setTimeout(function() { runLayout(); }, 0);
   }
 
   applyViewMode();
@@ -755,12 +763,17 @@ function onBackgroundTap() {
   if (viewMode !== 'ego') closeDetail();
 }
 
-// ── Overlap elimination ────────────────────────────────────────────────────
-// Post-physics pass: push every overlapping node pair apart until stable.
-// Runs in O(n² * passes) — fine for ~200 nodes. Called after every layout.
+// ── Layout engine: D3-force ────────────────────────────────────────────────
+// D3's forceCollide is a hard collision constraint that runs DURING the
+// simulation — not post-processing — so it always wins against spring forces
+// regardless of how many edges a hub has (Devon @ 73 connections works fine).
+//
+// Falls back to cose + eliminateOverlaps if D3 fails to load.
+
 function eliminateOverlaps(gap, maxPasses) {
-  gap      = gap      === undefined ? 22 : gap;
-  maxPasses = maxPasses === undefined ? 25 : maxPasses;
+  // Fallback post-processor (used if D3 unavailable or after D3 for final polish)
+  gap      = gap      === undefined ? 28 : gap;
+  maxPasses = maxPasses === undefined ? 40 : maxPasses;
   var nodes = cy.nodes().toArray();
   for (var pass = 0; pass < maxPasses; pass++) {
     var moved = 0;
@@ -772,7 +785,7 @@ function eliminateOverlaps(gap, maxPasses) {
         var dx = pb.x - pa.x, dy = pb.y - pa.y;
         var dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
         if (dist < minD) {
-          var push = (minD - dist) * 0.52;
+          var push = (minD - dist) * 0.65;
           var nx = dx / dist, ny = dy / dist;
           if (!a.locked()) a.position({ x: pa.x - nx * push, y: pa.y - ny * push });
           if (!b.locked()) b.position({ x: pb.x + nx * push, y: pb.y + ny * push });
@@ -785,41 +798,81 @@ function eliminateOverlaps(gap, maxPasses) {
 }
 
 function weightedLayout(overrides) {
-  // cose for global structure; eliminateOverlaps() enforces hard min-gap after.
-  //
-  // nodeRepulsion: linear-degree keeps ALL nodes repelling each other (including
-  //   non-connected). Flat base = leaves don't fly out; +degree*600 = hubs
-  //   push their ring wide. leaf(1)=>8.6k | sub-hub(12)=>15.2k | Devon(73)=>51.8k
-  //
-  // idealEdgeLength: ring-circumference math ensures hubs have room for neighbors.
-  //   Devon(73)=>365px(40px/slot) | sub-hub(12)=>100px floor | leaf=>100px floor
-  //
-  // Overlaps that survive the physics are fixed by eliminateOverlaps().
+  // cose fallback (used only if D3 unavailable)
   return Object.assign({
     name: 'cose',
-    numIter: 4000,
-    coolingFactor: 0.99,
-    gravity: 0.10,
-    nodeOverlap: 6,
-    componentSpacing: 200,
+    numIter: 3000,
+    coolingFactor: 0.97,
+    gravity: 0.25,
+    nodeOverlap: 20,
+    componentSpacing: 150,
     padding: 80,
-    nodeRepulsion: function(node) {
-      // More aggressive: leaf=>19k, sub-hub(12)=>29k, Devon(73)=>84k
-      return 18000 + node.degree() * 900;
-    },
+    nodeRepulsion: function(node) { return 4500 + node.degree() * 150; },
     idealEdgeLength: function(edge) {
-      // Devon(73)=>438px | sub-hub(20)=>120px | sub-hub(12)=>90px | leaf=>90px
-      var maxDeg = Math.max(edge.source().degree(), edge.target().degree());
-      return Math.max(90, maxDeg * 6);
+      return Math.max(60, Math.max(edge.source().degree(), edge.target().degree()) * 3);
     },
   }, overrides || {});
 }
 
+function runLayout(onDone) {
+  if (!cy) return;
+
+  if (!window.d3) {
+    // D3 not loaded — fall back to cose + overlap elimination
+    cy.layout(weightedLayout({ animate: false })).run()
+      .on('layoutstop', function() { eliminateOverlaps(); if (onDone) onDone(); });
+    return;
+  }
+
+  // Build D3 node/link arrays from Cytoscape graph
+  var nodeArr = cy.nodes().map(function(n) {
+    return { id: n.id(), r: n.width() / 2, degree: n.degree() };
+  });
+  var linkArr = cy.edges().map(function(e) {
+    var maxDeg = Math.max(e.source().degree(), e.target().degree());
+    return {
+      source: e.source().id(),
+      target: e.target().id(),
+      dist:   Math.max(80, maxDeg * 5)
+    };
+  });
+
+  // D3-force simulation:
+  //   forceLink   — edge springs (ideal distance scales with hub degree)
+  //   forceManyBody — global repulsion between ALL node pairs (Barnes-Hut)
+  //   forceCollide  — hard collision: nodes stay >= radius+gap apart during sim
+  //   forceCenter   — gentle pull to origin so graph doesn't drift
+  var sim = d3.forceSimulation(nodeArr)
+    .force('link', d3.forceLink(linkArr)
+      .id(function(d) { return d.id; })
+      .distance(function(d) { return d.dist; })
+      .strength(0.5))
+    .force('charge', d3.forceManyBody()
+      .strength(function(d) { return -(100 + d.degree * 60); }))
+    .force('collide', d3.forceCollide()
+      .radius(function(d) { return d.r + 24; })
+      .strength(1.0)
+      .iterations(5))
+    .force('center', d3.forceCenter(0, 0).strength(0.08))
+    .stop();
+
+  // Run synchronously (~100ms for 155 nodes × 600 ticks)
+  for (var i = 0; i < 600; i++) sim.tick();
+
+  // Apply D3 positions to Cytoscape
+  nodeArr.forEach(function(d) {
+    cy.getElementById(d.id).position({ x: d.x || 0, y: d.y || 0 });
+  });
+
+  cy.fit(60);
+  if (onDone) onDone();
+}
+
 function relayout() {
   if (!cy) return;
-  var params = weightedLayout({ animate: false, numIter: 3500, coolingFactor: 0.99 });
-  cy.layout(params).run().on('layoutstop', function() { eliminateOverlaps(); });
+  runLayout();
 }
+
 
 function fitGraph() {
   if (cy) cy.fit(40);
@@ -1548,7 +1601,7 @@ function applyDelta(msg) {
         if (cn.length) { cn.data('degree', n.degree); cn.style({ width: nodeSize(n.degree), height: nodeSize(n.degree) }); }
       });
       // Gentle settle: close the hole left by the deleted node without jarring reposition
-      cy.layout(weightedLayout({ animate: true, animationDuration: 600, numIter: 600 })).run().on('layoutstop', function() { eliminateOverlaps(); });
+      setTimeout(function() { runLayout(); }, 0);
     }
     // Close detail if was showing that node
     if (detailName === msg.entity) closeDetail();
