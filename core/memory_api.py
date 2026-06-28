@@ -84,6 +84,91 @@ async def _resolve_exact(g, name: str):
     return None
 
 
+
+async def find_similar(name: str, top_k: int = 6) -> dict:
+    """Surface entities semantically similar to the named one (likely duplicates).
+
+    Queries the vector store with the entity's name + description, excludes self.
+    Scores are distances: lower = more similar. Candidates below ~0.25 are strong
+    duplicate suspects. Use merge(source, target) to consolidate confirmed duplicates.
+    """
+    records = journal.read_all()
+    ents_by_key, _ = ms.replay(records)
+    target_key = name.strip().lower()
+    target = ents_by_key.get(target_key)
+    if not target:
+        return {"ok": False, "error": f"Entity '{name}' not found", "candidates": []}
+    query = f"{target['name']}. {target.get('description', '')}".strip()
+    rag = await get_rag()
+    raw = await rag.entities_vdb.query(query, top_k=top_k + 1)
+    candidates = []
+    for r in raw:
+        entity_name = r.get("entity_name", "")
+        if entity_name.lower() == target_key:
+            continue
+        candidates.append({
+            "name":     entity_name,
+            "distance": _score(r),
+            "snippet":  (r.get("content") or "")[:180],
+        })
+    return {
+        "ok":        True,
+        "entity":    name,
+        "candidates": candidates[:top_k],
+        "note":      "Distance < 0.25 = strong duplicate suspect. Use merge() to consolidate.",
+    }
+
+
+async def stale_entities(days: int = 90, limit: int = 30) -> dict:
+    """Return entities not touched in the journal for the last N days, stalest-first.
+
+    Pure journal read - no LightRAG / Ollama required. Useful for periodic review:
+    surfaces tasks that may be done, projects that may have stalled, or facts that
+    may have changed since they were last written.
+    """
+    import datetime as _dt
+    records = journal.read_all()
+    ents_by_key, _ = ms.replay(records)
+    last_ts: dict[str, str] = {}
+    for rec in records:
+        ts = rec.get("ts", "")
+        if not ts:
+            continue
+        for ent in rec.get("entities", []) or []:
+            k = (ent.get("name") or "").lower()
+            if k and (k not in last_ts or ts > last_ts[k]):
+                last_ts[k] = ts
+        for rel in rec.get("relationships", []) or []:
+            for side in ("source", "target"):
+                k = (rel.get(side) or "").lower()
+                if k and (k not in last_ts or ts > last_ts[k]):
+                    last_ts[k] = ts
+    cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)
+    now = _dt.datetime.now(_dt.timezone.utc)
+    stale = []
+    for key, ent in ents_by_key.items():
+        lw = last_ts.get(key)
+        if not lw:
+            stale.append({"name": ent["name"], "type": ent["type"],
+                          "category": ent["category"], "last_written": None,
+                          "days_since": None})
+            continue
+        try:
+            dt = _dt.datetime.fromisoformat(lw.replace("Z", "+00:00"))
+            if dt < cutoff:
+                stale.append({"name": ent["name"], "type": ent["type"],
+                              "category": ent["category"], "last_written": lw,
+                              "days_since": (now - dt).days})
+        except Exception:
+            pass
+    stale.sort(key=lambda x: (x["last_written"] or ""))
+    return {
+        "threshold_days": days,
+        "stale_count":    len(stale),
+        "stale_entities": stale[:limit],
+    }
+
+
 async def remember(entities=None, relationships=None, context="", origin="conversation") -> dict:
     record, warns = ms.normalize_memory(
         entities=coerce_list(entities), relationships=coerce_list(relationships),
@@ -123,6 +208,28 @@ async def remember(entities=None, relationships=None, context="", origin="conver
     except Exception:
         rag = None                                        # graph/embeddings offline
 
+    # Conflict detection: capture old description for any entity being updated so
+    # Claude can surface meaningful changes to Devon. Write always proceeds (no
+    # approval gate), but `updates` in the response gives Claude the signal.
+    updates: list[dict] = []
+    if rag is not None:
+        try:
+            cg = rag.chunk_entity_relation_graph
+            for ent in record["entities"]:
+                existing_id = await _resolve_exact(cg, ent["name"])
+                if existing_id:
+                    node = await cg.get_node(existing_id) or {}
+                    old_desc = (node.get("description") or "").strip()
+                    new_desc = (ent.get("description") or "").strip()
+                    if old_desc and new_desc and old_desc != new_desc and old_desc not in new_desc:
+                        updates.append({
+                            "entity":          ent["name"],
+                            "old_description": old_desc,
+                            "new_description": new_desc,
+                        })
+        except Exception:
+            pass
+
     record = journal.append(record)                       # durable; includes new stubs
     frag = ms.build_fragment(record, known=known)
 
@@ -144,6 +251,10 @@ async def remember(entities=None, relationships=None, context="", origin="conver
         "index_error": index_error,
         "note": None if indexed else "Saved to journal; run `python rebuild.py` to index later.",
         "warnings": warns,
+        # Non-empty when an existing entity's description was changed. Review each
+        # entry and surface meaningful changes to Devon before assuming the update
+        # was intentional -- the old description may capture a fact still true.
+        "updates": updates,
     }
 
 

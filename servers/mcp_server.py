@@ -100,8 +100,33 @@ async def merge(source: str, target: str) -> str:
     """Merge source entity into target. All of source's relationships are
     re-pointed to target (self-loops are dropped), then source is forgotten.
     target survives with its own name and metadata unchanged.
-    Use this to deduplicate entities (e.g. 'Rewst' → 'Rewst Automation Platform')."""
+    Use this to deduplicate entities (e.g. 'Rewst' to 'Rewst Automation Platform')."""
     return _j(await api.merge(source, target))
+
+
+# --------------------------- MAINTENANCE -----------------------------------
+
+@mcp.tool()
+async def find_similar(name: str, top_k: int = 6) -> str:
+    """Surface entities that may be duplicates of the named entity.
+
+    Searches the vector store for near-neighbours of name's embedding and
+    returns candidates sorted by distance (lower = more similar). Use this
+    to detect accidental duplicates before they accumulate, then consolidate
+    with merge(). Scores are distances: < 0.25 is a strong duplicate suspect.
+    """
+    return _j(await api.find_similar(name, top_k))
+
+
+@mcp.tool()
+async def stale_entities(days: int = 90, limit: int = 30) -> str:
+    """Return entities not updated in the journal for the last N days.
+
+    Useful for periodic memory review: surfaces tasks that may be done,
+    projects that may have stalled, or facts that may have changed.
+    Pure journal read - no Ollama needed. Results sorted stalest-first.
+    """
+    return _j(await api.stale_entities(days, limit))
 
 
 # --------------------------- READ (no LLM) ---------------------------------
