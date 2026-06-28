@@ -833,7 +833,7 @@ function runLayout(onDone) {
     return {
       source: e.source().id(),
       target: e.target().id(),
-      dist:   Math.max(80, maxDeg * 5)
+      dist:   Math.max(80, maxDeg * 3)
     };
   });
 
@@ -848,7 +848,7 @@ function runLayout(onDone) {
       .distance(function(d) { return d.dist; })
       .strength(0.5))
     .force('charge', d3.forceManyBody()
-      .strength(function(d) { return -(100 + d.degree * 60); }))
+      .strength(function(d) { return -(100 + d.degree * 40); }))
     .force('collide', d3.forceCollide()
       .radius(function(d) { return d.r + 24; })
       .strength(1.0)
