@@ -716,6 +716,30 @@ function _buildCy(savedPositions) {
   cy.on('mouseover', 'node', e => hoverFocus(e.target));
   cy.on('mouseout',  'node', () => hoverUnfocus());
 
+  // Live drag: push overlapping nodes away as you drag (no relayout on release)
+  cy.on('drag', 'node', function(e) {
+    var dragged = e.target;
+    var pos = dragged.position();
+    var dw2 = dragged.width() / 2;
+    cy.nodes().not(dragged).forEach(function(n) {
+      var np = n.position();
+      if (Math.abs(np.x - pos.x) > 280 || Math.abs(np.y - pos.y) > 280) return;
+      var dx = np.x - pos.x, dy = np.y - pos.y;
+      var dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
+      var minDist = dw2 + n.width() / 2 + 16;
+      if (dist < minDist) {
+        var push = (minDist - dist) * 0.6;
+        n.position({ x: np.x + (dx / dist) * push, y: np.y + (dy / dist) * push });
+      }
+    });
+  });
+  // dragfree: no relayout — manual positions are sticky.
+
+  // After fresh layout (not preset), fix any remaining overlaps
+  if (Object.keys(savedPositions).length === 0) {
+    cy.one('layoutstop', function() { eliminateOverlaps(); });
+  }
+
   applyViewMode();
   renderLegend();
 }
@@ -731,38 +755,70 @@ function onBackgroundTap() {
   if (viewMode !== 'ego') closeDetail();
 }
 
+// ── Overlap elimination ────────────────────────────────────────────────────
+// Post-physics pass: push every overlapping node pair apart until stable.
+// Runs in O(n² * passes) — fine for ~200 nodes. Called after every layout.
+function eliminateOverlaps(gap, maxPasses) {
+  gap      = gap      === undefined ? 22 : gap;
+  maxPasses = maxPasses === undefined ? 25 : maxPasses;
+  var nodes = cy.nodes().toArray();
+  for (var pass = 0; pass < maxPasses; pass++) {
+    var moved = 0;
+    for (var i = 0; i < nodes.length; i++) {
+      for (var j = i + 1; j < nodes.length; j++) {
+        var a = nodes[i], b = nodes[j];
+        var pa = a.position(), pb = b.position();
+        var minD = (a.width() + b.width()) / 2 + gap;
+        var dx = pb.x - pa.x, dy = pb.y - pa.y;
+        var dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
+        if (dist < minD) {
+          var push = (minD - dist) * 0.52;
+          var nx = dx / dist, ny = dy / dist;
+          if (!a.locked()) a.position({ x: pa.x - nx * push, y: pa.y - ny * push });
+          if (!b.locked()) b.position({ x: pb.x + nx * push, y: pb.y + ny * push });
+          moved++;
+        }
+      }
+    }
+    if (moved === 0) break;
+  }
+}
+
 function weightedLayout(overrides) {
-  // Degree-weighted cose physics inspired by Obsidian Graph View.
-  // Hubs earn central positions naturally: their many edge-pulls balance at
-  // center while leaves float outward. Tuned for ~150 nodes.
+  // cose for global structure; eliminateOverlaps() enforces hard min-gap after.
   //
-  //   Devon (deg 73) => repulsion ~459k, edge 130px  (-21% vs previous)
-  //   medium (deg 10) => repulsion ~48k,  edge 242px  (+42% vs previous)
-  //   leaf   (deg  1) => repulsion ~30.5k, edge 258px (+188% vs previous)
+  // nodeRepulsion: linear-degree keeps ALL nodes repelling each other (including
+  //   non-connected). Flat base = leaves don't fly out; +degree*600 = hubs
+  //   push their ring wide. leaf(1)=>8.6k | sub-hub(12)=>15.2k | Devon(73)=>51.8k
   //
-  // The wide gap between hub and leaf repulsion means hubs carve large personal
-  // space — but gravity (0.40) and 73+ edge-pulls balance them at center.
-  // Raising the hub-edge floor from 60->130px prevents Devon's neighbors from
-  // crowding into a dense ring and causing label overlap.
+  // idealEdgeLength: ring-circumference math ensures hubs have room for neighbors.
+  //   Devon(73)=>365px(40px/slot) | sub-hub(12)=>100px floor | leaf=>100px floor
+  //
+  // Overlaps that survive the physics are fixed by eliminateOverlaps().
   return Object.assign({
     name: 'cose',
-    numIter: 3000,
+    numIter: 4000,
     coolingFactor: 0.99,
-    gravity: 0.40,
-    nodeOverlap: 20,
-    componentSpacing: 180,
+    gravity: 0.10,
+    nodeOverlap: 6,
+    componentSpacing: 200,
     padding: 80,
-    nodeRepulsion: function(node) { return 30000 + Math.pow(node.degree(), 1.6) * 450; },
+    nodeRepulsion: function(node) {
+      // More aggressive: leaf=>19k, sub-hub(12)=>29k, Devon(73)=>84k
+      return 18000 + node.degree() * 900;
+    },
     idealEdgeLength: function(edge) {
+      // Devon(73)=>438px | sub-hub(20)=>120px | sub-hub(12)=>90px | leaf=>90px
       var maxDeg = Math.max(edge.source().degree(), edge.target().degree());
-      return Math.max(130, 260 - maxDeg * 1.8);
+      return Math.max(90, maxDeg * 6);
     },
   }, overrides || {});
 }
 
 function relayout() {
   if (!cy) return;
-  cy.layout(weightedLayout({ animate: true, animationDuration: 700 })).run();
+  var params = weightedLayout({ animate: false, numIter: 3500, coolingFactor: 0.99 });
+  cy.layout(params).run().on('layoutstop', function() { eliminateOverlaps(); });
 }
 
 function fitGraph() {
@@ -1492,7 +1548,7 @@ function applyDelta(msg) {
         if (cn.length) { cn.data('degree', n.degree); cn.style({ width: nodeSize(n.degree), height: nodeSize(n.degree) }); }
       });
       // Gentle settle: close the hole left by the deleted node without jarring reposition
-      cy.layout(weightedLayout({ animate: true, animationDuration: 600, numIter: 450, coolingFactor: 0.93 })).run();
+      cy.layout(weightedLayout({ animate: true, animationDuration: 600, numIter: 600 })).run().on('layoutstop', function() { eliminateOverlaps(); });
     }
     // Close detail if was showing that node
     if (detailName === msg.entity) closeDetail();
